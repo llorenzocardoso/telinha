@@ -4,7 +4,10 @@ export const MAX_SIGNAL_PAYLOAD_BYTES = 64 * 1024;
 const PARTICIPANT_ID = /^user-[a-f0-9]{32}$/;
 const ROOM_CODE = /^[A-Z0-9]{6}$/;
 const SESSION_TOKEN = /^[A-Za-z0-9_-]{32}$/;
+const STREAM_ID = /^[A-Za-z0-9{}_-]{1,64}$/;
 const MAX_SDP_LENGTH = 60 * 1024;
+
+export const SERVER_FEATURES = ["camera"] as const;
 const MAX_CANDIDATE_LENGTH = 8 * 1024;
 
 export interface ClientAuthentication {
@@ -17,7 +20,8 @@ export interface ClientAuthentication {
 }
 
 export type ClientSignal =
-  | { type: "ping" | "leave" | "share-started" | "share-stopped" }
+  | { type: "ping" | "leave" | "share-started" | "share-stopped" | "camera-stopped" }
+  | { type: "camera-started"; streamId: string }
   | { type: "watch-started" | "watch-stopped"; to: string }
   | { type: "offer"; to: string; sdp: string }
   | { type: "answer"; to: string; sdp: string }
@@ -89,9 +93,16 @@ export function parseClientSignal(raw: string): ClientSignal | ProtocolError {
     value.type === "ping" ||
     value.type === "leave" ||
     value.type === "share-started" ||
-    value.type === "share-stopped"
+    value.type === "share-stopped" ||
+    value.type === "camera-stopped"
   ) {
     return { type: value.type };
+  }
+  if (value.type === "camera-started") {
+    if (typeof value.streamId !== "string" || !STREAM_ID.test(value.streamId)) {
+      return { code: "invalid-message", message: "Câmera inválida." };
+    }
+    return { type: "camera-started", streamId: value.streamId };
   }
   if (!validParticipantId(value.to)) {
     return { code: "invalid-message", message: "Destinatário inválido." };

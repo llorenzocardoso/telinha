@@ -521,6 +521,44 @@ describe("telinha server", () => {
 
   });
 
+  it("anuncia a câmera para a sala e para quem entra depois", async () => {
+    const { server, base } = await listen();
+    running = server;
+    const hostHttp = await postJson(`${base}/rooms`, { displayName: "Ana" });
+    expect(hostHttp.data.features).toContain("camera");
+    const hostSession = hostHttp.data as unknown as RoomSession;
+    const viewerHttp = await postJson(`${base}/rooms/${hostSession.code}/join`, { displayName: "Bia" });
+    const viewerSession = viewerHttp.data as unknown as RoomSession;
+    const host = new WebSocket(signalingUrl(hostSession));
+    const viewer = new WebSocket(signalingUrl(viewerSession));
+    await Promise.all([waitForType(host, "hello"), waitForType(viewer, "hello")]);
+
+    const started = waitForType(viewer, "camera-started");
+    host.send(JSON.stringify({ type: "camera-started", streamId: "stream-camera-1" }));
+    await expect(started).resolves.toMatchObject({
+      participantId: hostSession.participantId,
+      streamId: "stream-camera-1",
+    });
+
+    const lateHttp = await postJson(`${base}/rooms/${hostSession.code}/join`, { displayName: "Cris" });
+    const late = new WebSocket(signalingUrl(lateHttp.data as unknown as RoomSession));
+    const hello = (await waitForType(late, "hello")) as {
+      participants?: { id: string; camera?: boolean; cameraStreamId?: string }[];
+    };
+    expect(hello.participants?.find((person) => person.id === hostSession.participantId)).toMatchObject({
+      camera: true,
+      cameraStreamId: "stream-camera-1",
+    });
+
+    const stopped = waitForType(viewer, "camera-stopped");
+    host.send(JSON.stringify({ type: "camera-stopped" }));
+    await expect(stopped).resolves.toMatchObject({ participantId: hostSession.participantId });
+
+    host.close();
+    viewer.close();
+    late.close();
+  });
+
   it("publica a versão mínima do app", async () => {
     const server = createTelinhaServer({ disableRateLimit: true, minAppVersion: "0.3.0" });
     running = server;

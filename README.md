@@ -29,6 +29,7 @@ O Telinha cria salas temporárias por código para compartilhar e assistir telas
 - entrada sem cadastro, usando apenas um nome;
 - compartilhamento de tela com captura e codificação pelo Chromium;
 - áudio do sistema por loopback nativo no app Windows;
+- câmera opcional, junto ou separada da tela, com escolha da câmera padrão;
 - mais de uma transmissão simultânea, com visualização em grade;
 - reconexão automática e recuperação de sessões recentes;
 - indicadores de qualidade da conexão e diagnóstico local sanitizado;

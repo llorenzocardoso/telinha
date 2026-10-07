@@ -1,28 +1,42 @@
 import type { ReactNode } from "react";
-import { PhoneOff } from "lucide-react";
+import { PhoneOff, Video, VideoOff } from "lucide-react";
 import { VolumeControl } from "./VolumeControl";
 
-interface LiveControlsProps {
+export interface StreamVolume {
+  id: string;
+  // Só vem preenchido quando há mais de uma transmissão na tela.
+  name?: string;
   volume: number;
+  onChange: (volume: number) => void;
+}
+
+interface LiveControlsProps {
+  volumes: StreamVolume[];
   fullscreen: boolean;
   connected: boolean;
   isSharing: boolean;
-  onVolumeChange: (volume: number) => void;
+  cameraOn: boolean;
+  cameraReady: boolean;
+  cameraLabel: string;
   onToggleFullscreen: () => void;
   onToggleShare: () => void;
+  onToggleCamera: () => void;
   onStopWatching: () => void;
   onLeaveRoom: () => void;
   onLockChange: (locked: boolean) => void;
 }
 
 export function LiveControls({
-  volume,
+  volumes,
   fullscreen,
   connected,
   isSharing,
-  onVolumeChange,
+  cameraOn,
+  cameraReady,
+  cameraLabel,
   onToggleFullscreen,
   onToggleShare,
+  onToggleCamera,
   onStopWatching,
   onLeaveRoom,
   onLockChange,
@@ -46,11 +60,17 @@ export function LiveControls({
       onBlurCapture={releaseControls}
     >
       <div className="watch-edge-controls watch-audio-controls">
-        <VolumeControl
-          volume={volume}
-          onChange={onVolumeChange}
-          onInteract={() => onLockChange(true)}
-        />
+        {volumes.map((item) => (
+          <div key={item.id} className="watch-volume-item">
+            <VolumeControl
+              volume={item.volume}
+              label={item.name ? `Volume de ${item.name}` : undefined}
+              onChange={item.onChange}
+              onInteract={() => onLockChange(true)}
+            />
+            {item.name && <span className="watch-volume-name">{item.name}</span>}
+          </div>
+        ))}
       </div>
 
       <div className="watch-control-dock" aria-label="Controles da transmissão">
@@ -61,6 +81,19 @@ export function LiveControls({
           onClick={onToggleShare}
         >
           <ScreenShareIcon active={isSharing} />
+        </ControlButton>
+
+        <ControlButton
+          label={cameraLabel}
+          active={cameraOn}
+          disabled={!cameraReady}
+          onClick={onToggleCamera}
+        >
+          {cameraOn ? (
+            <Video aria-hidden="true" strokeWidth={2.2} />
+          ) : (
+            <VideoOff aria-hidden="true" strokeWidth={2.2} />
+          )}
         </ControlButton>
 
         <ControlButton label="Parar de assistir" onClick={onStopWatching}>

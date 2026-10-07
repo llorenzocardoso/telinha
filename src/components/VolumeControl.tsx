@@ -2,11 +2,17 @@ import { useRef } from "react";
 
 interface VolumeControlProps {
   volume: number;
+  label?: string;
   onChange: (volume: number) => void;
   onInteract?: () => void;
 }
 
-export function VolumeControl({ volume, onChange, onInteract }: VolumeControlProps) {
+export function VolumeControl({
+  volume,
+  label = "Volume da transmissão",
+  onChange,
+  onInteract,
+}: VolumeControlProps) {
   const lastVolume = useRef(volume || 80);
   const railRef = useRef<HTMLDivElement>(null);
 
@@ -52,7 +58,7 @@ export function VolumeControl({ volume, onChange, onInteract }: VolumeControlPro
       <div
         className="watch-volume-slider"
         role="slider"
-        aria-label="Volume da transmissão"
+        aria-label={label}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={volume}

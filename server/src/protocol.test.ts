@@ -27,6 +27,23 @@ describe("protocolo de sinalização", () => {
     ).toMatchObject({ type: "ice", to: peer });
   });
 
+  it("aceita câmera somente com um id de stream válido", () => {
+    expect(
+      parseClientSignal(
+        JSON.stringify({ type: "camera-started", streamId: "3f1c2a9e-7b1d-4c55-9a0e-2d6f8b1c4e7a" }),
+      ),
+    ).toEqual({ type: "camera-started", streamId: "3f1c2a9e-7b1d-4c55-9a0e-2d6f8b1c4e7a" });
+    expect(parseClientSignal(JSON.stringify({ type: "camera-stopped" }))).toEqual({
+      type: "camera-stopped",
+    });
+    expect(isProtocolError(parseClientSignal(JSON.stringify({ type: "camera-started" })))).toBe(true);
+    expect(
+      isProtocolError(
+        parseClientSignal(JSON.stringify({ type: "camera-started", streamId: "a b\r\nc" })),
+      ),
+    ).toBe(true);
+  });
+
   it("valida autenticação enviada como primeira mensagem", () => {
     expect(
       parseClientAuthentication(

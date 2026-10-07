@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { PhoneOff } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { PhoneOff, Settings, Video, VideoOff } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import type { RoomSession } from "../lib/api";
@@ -10,8 +10,17 @@ import {
 } from "../hooks/useTelinhaRoom";
 import { ConnectionBadge, ErrorNotice } from "../components/ConnectionStatus";
 import { areSoundsEnabled, setSoundsEnabled } from "../lib/sounds";
-import { addWatching, mosaicColumns, pruneWatching, removeWatching } from "../lib/watch";
+import {
+  addWatching,
+  mosaicColumns,
+  parseWatchVolumes,
+  pruneWatching,
+  removeWatching,
+  setWatchVolume,
+} from "../lib/watch";
 import { ScreenSharePicker } from "../components/ScreenSharePicker";
+import { CameraSettings } from "../components/CameraSettings";
+import { CameraStrip } from "../components/CameraStrip";
 import { VideoTile } from "../components/VideoTile";
 import { LiveControls } from "../components/LiveControls";
 
@@ -24,6 +33,8 @@ interface RoomScreenProps {
   openPicker?: boolean;
   onPickerOpened?: () => void;
 }
+
+const VOLUMES_KEY = "telinha-watch-volumes";
 
 interface RoomToast {
   id: number;
@@ -44,11 +55,14 @@ export function RoomScreen({
   const [copied, setCopied] = useState(false);
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [cameraSettingsOpen, setCameraSettingsOpen] = useState(false);
   const [watchingIds, setWatchingIds] = useState<string[]>([]);
-  const [volume, setVolume] = useState(() => {
-    const stored = Number(localStorage.getItem("telinha-watch-volume"));
-    return Number.isFinite(stored) ? Math.min(100, Math.max(0, stored)) : 100;
-  });
+  // Volume de cada transmissão nesta sala, por participante.
+  const [volumes, setVolumes] = useState<Record<string, number>>({});
+  // Último volume usado com cada nome, para a pessoa voltar no mesmo nível em outra sessão.
+  const [rememberedVolumes, setRememberedVolumes] = useState(() =>
+    parseWatchVolumes(localStorage.getItem(VOLUMES_KEY)),
+  );
   const [chromeVisible, setChromeVisible] = useState(true);
   const [controlsLocked, setControlsLocked] = useState(false);
   const [watchFullscreen, setWatchFullscreen] = useState(() => {
@@ -62,7 +76,10 @@ export function RoomScreen({
   const {
     connectionState,
     isSharing,
+    isCameraOn,
+    cameraSupported,
     screenShares,
+    cameras,
     participants,
     watcherCounts,
     watcherNames,
@@ -71,13 +88,16 @@ export function RoomScreen({
     retryConnections,
     startShare,
     stopShare,
+    startCamera,
+    stopCamera,
+    applyCameraDevice,
     setWatchingShare,
     error,
   } = useTelinhaRoom(session, { onSessionRefresh, onUpdateRequired });
 
   useEffect(() => {
-    onSharingChange?.(isSharing);
-  }, [isSharing, onSharingChange]);
+    onSharingChange?.(isSharing || isCameraOn);
+  }, [isSharing, isCameraOn, onSharingChange]);
 
   useEffect(() => {
     void invoke("set_discord_presence", { code: session.code }).catch(() => undefined);
@@ -96,6 +116,7 @@ export function RoomScreen({
   const watching = watchingShares.length > 0 && !pickerOpen;
   const hosting = isSharing && !watching && !pickerOpen;
   const multiWatch = watchingShares.length > 1;
+  const hasCameras = cameras.length > 0;
   const remoteShareKey = remoteShares
     .map((share) => `${share.participantIdentity}\t${share.participantName}`)
     .join("\0");
@@ -164,17 +185,19 @@ export function RoomScreen({
             : "watch-window"
         : hosting
           ? "host"
-          : "lobby";
+          : hasCameras
+            ? "lobby-cameras"
+            : "lobby";
     void invoke("set_window_layout", { layout }).catch(() => undefined);
-  }, [pickerOpen, watching, hosting, watchFullscreen, multiWatch]);
+  }, [pickerOpen, watching, hosting, watchFullscreen, multiWatch, hasCameras]);
 
   useEffect(() => {
     localStorage.setItem("telinha-watch-fullscreen", watchFullscreen ? "1" : "0");
   }, [watchFullscreen]);
 
   useEffect(() => {
-    localStorage.setItem("telinha-watch-volume", String(volume));
-  }, [volume]);
+    localStorage.setItem(VOLUMES_KEY, JSON.stringify(rememberedVolumes));
+  }, [rememberedVolumes]);
 
   const watchedRef = useRef<string[]>([]);
   useEffect(() => {
@@ -237,9 +260,18 @@ export function RoomScreen({
     };
   }, [controlsLocked, watching]);
 
+  const closeCameraSettings = useCallback(() => {
+    setCameraSettingsOpen(false);
+    void applyCameraDevice();
+  }, [applyCameraDevice]);
+
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        if (cameraSettingsOpen) {
+          closeCameraSettings();
+          return;
+        }
         if (pickerOpen) {
           setPickerOpen(false);
           return;
@@ -259,7 +291,7 @@ export function RoomScreen({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [pickerOpen, watching, watchFullscreen]);
+  }, [cameraSettingsOpen, closeCameraSettings, pickerOpen, watching, watchFullscreen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -312,6 +344,15 @@ export function RoomScreen({
   const reconnecting = connectionState === ConnectionState.Reconnecting;
   const localViewers = watcherCounts[localId] ?? 0;
 
+  function shareVolume(share: ScreenShareInfo): number {
+    return volumes[share.participantIdentity] ?? rememberedVolumes[share.participantName] ?? 100;
+  }
+
+  function changeShareVolume(share: ScreenShareInfo, volume: number) {
+    setVolumes((current) => setWatchVolume(current, share.participantIdentity, volume));
+    setRememberedVolumes((current) => setWatchVolume(current, share.participantName, volume));
+  }
+
   function watchShare(id: string) {
     setWatchingIds((current) =>
       current.includes(id) ? removeWatching(current, id) : addWatching(current, id),
@@ -339,6 +380,29 @@ export function RoomScreen({
     setRoomSounds(next);
     setSoundsEnabled(next);
   }
+
+  function toggleCamera() {
+    if (isCameraOn) {
+      stopCamera();
+      return;
+    }
+    void startCamera();
+  }
+
+  const cameraReady = connected && cameraSupported;
+  const cameraLabel = isCameraOn ? "Desligar câmera" : "Ligar câmera";
+  const cameraHint = cameraSupported
+    ? cameraLabel
+    : "O servidor desta sala ainda não aceita câmera";
+  const cameraIcon = isCameraOn ? (
+    <Video aria-hidden="true" strokeWidth={2.2} />
+  ) : (
+    <VideoOff aria-hidden="true" strokeWidth={2.2} />
+  );
+  const openCameraSettings = () => setCameraSettingsOpen(true);
+  const cameraSettings = cameraSettingsOpen ? (
+    <CameraSettings onClose={closeCameraSettings} />
+  ) : null;
 
   function toggleOwnShare() {
     if (isSharing) {
@@ -369,7 +433,7 @@ export function RoomScreen({
           <WatchAudio
             key={share.participantIdentity}
             stream={share.stream}
-            volume={volume}
+            volume={shareVolume(share)}
           />
         ))}
         <header className="watch-chrome top">
@@ -446,14 +510,24 @@ export function RoomScreen({
           </nav>
         )}
 
+        <CameraStrip cameras={cameras} variant="overlay" onOpenSettings={openCameraSettings} />
+
         <LiveControls
-          volume={volume}
+          volumes={watchingShares.map((share) => ({
+            id: share.participantIdentity,
+            name: multiWatch ? share.participantName : undefined,
+            volume: shareVolume(share),
+            onChange: (next: number) => changeShareVolume(share, next),
+          }))}
           fullscreen={watchFullscreen}
           connected={connected}
           isSharing={isSharing}
-          onVolumeChange={setVolume}
+          cameraOn={isCameraOn}
+          cameraReady={cameraReady}
+          cameraLabel={cameraHint}
           onToggleFullscreen={() => setWatchFullscreen((open) => !open)}
           onToggleShare={toggleOwnShare}
+          onToggleCamera={toggleCamera}
           onStopWatching={() => stopWatching()}
           onLeaveRoom={onLeave}
           onLockChange={setControlsLocked}
@@ -475,6 +549,7 @@ export function RoomScreen({
             setToasts((current) => current.filter((toast) => toast.shareId !== id));
           }}
         />
+        {cameraSettings}
       </div>
     );
   }
@@ -517,6 +592,8 @@ export function RoomScreen({
           )}
         </div>
 
+        <CameraStrip cameras={cameras} variant="row" onOpenSettings={openCameraSettings} />
+
         {remoteShares.length > 0 && (
           <LiveChooser
             shares={remoteShares}
@@ -542,6 +619,17 @@ export function RoomScreen({
               <StopShareIcon />
               <span>Parar transmissão</span>
             </button>
+            <button
+              type="button"
+              className={`host-control-button camera ${isCameraOn ? "active" : ""}`}
+              aria-pressed={isCameraOn}
+              title={cameraHint}
+              disabled={!cameraReady}
+              onClick={toggleCamera}
+            >
+              {cameraIcon}
+              <span>{cameraLabel}</span>
+            </button>
             <button type="button" className="host-control-button leave-room" onClick={onLeave}>
               <PhoneOff aria-hidden="true" strokeWidth={2.2} />
               <span>Sair da sala</span>
@@ -558,6 +646,7 @@ export function RoomScreen({
           />
         )}
         <ToastStack toasts={toasts} onWatch={watchShare} />
+        {cameraSettings}
       </div>
     );
   }
@@ -589,7 +678,7 @@ export function RoomScreen({
         </div>
       </header>
 
-      <main className="lobby-content">
+      <main className={`lobby-content ${hasCameras ? "has-cameras" : ""}`}>
         {reconnecting && <p className="reconnect-banner">A conexão caiu. Tentando de novo...</p>}
 
         <div className="lobby-code">
@@ -608,6 +697,7 @@ export function RoomScreen({
               {person.name}
               {person.isLocal ? " (você)" : ""}
               {person.isSharing ? " · no ar" : ""}
+              {person.hasCamera ? " · câmera" : ""}
               {!person.connected ? " · reconectando" : ""}
             </span>
           ))}
@@ -621,20 +711,46 @@ export function RoomScreen({
             onWatchAll={watchAll}
           />
         ) : (
-          <p className="hint">Nenhuma transmissão no momento</p>
+          !hasCameras && <p className="hint">Nenhuma transmissão no momento</p>
         )}
+
+        <CameraStrip cameras={cameras} variant="stage" onOpenSettings={openCameraSettings} />
       </main>
 
       <footer className="room-footer lobby-footer">
-        <button
-          type="button"
-          className="btn btn-share"
-          onClick={() => setPickerOpen(true)}
-          disabled={!connected}
-        >
-          <span className="share-icon" aria-hidden="true" />
-          Compartilhar tela
-        </button>
+        <div className="lobby-actions">
+          <button
+            type="button"
+            className="btn btn-share"
+            onClick={() => setPickerOpen(true)}
+            disabled={!connected}
+          >
+            <span className="share-icon" aria-hidden="true" />
+            Compartilhar tela
+          </button>
+          <div className="camera-split">
+            <button
+              type="button"
+              className={`btn btn-secondary btn-camera ${isCameraOn ? "active" : ""}`}
+              aria-pressed={isCameraOn}
+              title={cameraHint}
+              disabled={!cameraReady}
+              onClick={toggleCamera}
+            >
+              {cameraIcon}
+              {cameraLabel}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-camera-settings"
+              aria-label="Escolher câmera"
+              title="Escolher câmera"
+              onClick={openCameraSettings}
+            >
+              <Settings aria-hidden="true" strokeWidth={2.2} />
+            </button>
+          </div>
+        </div>
         <span className="shortcut-hint">Ctrl+Shift+S</span>
       </footer>
 
@@ -647,6 +763,7 @@ export function RoomScreen({
         />
       )}
       <ToastStack toasts={toasts} onWatch={watchShare} />
+      {cameraSettings}
     </div>
   );
 }

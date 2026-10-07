@@ -36,7 +36,7 @@ export async function startDisplayMediaShare(
   _sourceId: string,
 ): Promise<MediaStream> {
   if (import.meta.env.DEV && import.meta.env.VITE_E2E_MEDIA === "1") {
-    return createSyntheticDisplayStream(quality.fps);
+    return createSyntheticStream(quality.fps);
   }
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getDisplayMedia) {
     throw new Error("A captura de tela do Windows não está disponível.");
@@ -74,10 +74,15 @@ export function needsNativeAudioLoopback(
   return nativeRuntime && includeAudio && audioTrackCount === 0;
 }
 
-function createSyntheticDisplayStream(fps: number): MediaStream {
+export function createSyntheticStream(
+  fps: number,
+  title = "Telinha E2E",
+  width = 1280,
+  height = 720,
+): MediaStream {
   const canvas = document.createElement("canvas");
-  canvas.width = 1280;
-  canvas.height = 720;
+  canvas.width = width;
+  canvas.height = height;
   canvas.style.position = "fixed";
   canvas.style.left = "-10000px";
   canvas.style.top = "0";
@@ -88,13 +93,13 @@ function createSyntheticDisplayStream(fps: number): MediaStream {
     throw new Error("O navegador não suporta a mídia sintética de teste.");
   }
   let frame = 1;
-  paintSyntheticFrame(context, canvas, frame);
+  paintSyntheticFrame(context, canvas, frame, title);
   const stream = canvas.captureStream(fps);
   const track = stream.getVideoTracks()[0];
   if (!track) throw new Error("Não foi possível criar a track sintética.");
   const timer = window.setInterval(() => {
     frame += 1;
-    paintSyntheticFrame(context, canvas, frame);
+    paintSyntheticFrame(context, canvas, frame, title);
   }, Math.max(16, Math.round(1000 / fps)));
   track.contentHint = "motion";
   track.addEventListener("ended", () => {
@@ -108,13 +113,14 @@ function paintSyntheticFrame(
   context: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
   frame: number,
+  title: string,
 ): void {
   const hue = frame % 360;
   context.fillStyle = `hsl(${hue} 55% 18%)`;
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.fillStyle = "#ffffff";
   context.font = "700 64px system-ui";
-  context.fillText("Telinha E2E", 64, 120);
+  context.fillText(title, 64, 120);
   context.font = "32px monospace";
   context.fillText(`frame ${frame}`, 64, 180);
 }

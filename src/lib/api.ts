@@ -21,6 +21,7 @@ export interface RoomSession {
   protocolVersion: number;
   wsAuthMode?: "message" | "query";
   iceServers?: SessionIceServer[];
+  features?: string[];
 }
 
 export interface AppConfig {
@@ -119,7 +120,14 @@ function parseRoomSession(data: Record<string, unknown>): RoomSession {
     protocolVersion: typeof protocolVersion === "number" ? protocolVersion : 1,
     wsAuthMode: wsAuthMode === "message" ? "message" : "query",
     iceServers: parseIceServers(data.iceServers),
+    features: Array.isArray(data.features)
+      ? data.features.filter((feature): feature is string => typeof feature === "string")
+      : undefined,
   };
+}
+
+export function sessionSupports(session: RoomSession, feature: string): boolean {
+  return session.features?.includes(feature) ?? false;
 }
 
 function parseIceServers(value: unknown): SessionIceServer[] | undefined {

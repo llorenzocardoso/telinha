@@ -57,7 +57,9 @@ class MockPeerConnection {
   }
 
   async addIceCandidate() {}
-  removeTrack() {}
+  removeTrack(sender: RTCRtpSender) {
+    this.senders = this.senders.filter((item) => (item as unknown as RTCRtpSender) !== sender);
+  }
   close() {
     this.closed += 1;
     this.connectionState = "closed";
@@ -104,7 +106,10 @@ describe("PeerManager", () => {
     return new PeerManager({
       localId,
       configuration,
-      getLocalStream,
+      getLocalStreams: () => {
+        const stream = getLocalStream();
+        return stream ? [stream] : [];
+      },
       getVideoBitrate: () => 10_000_000,
       preferH264: () => true,
       send: vi.fn(),
@@ -125,6 +130,42 @@ describe("PeerManager", () => {
     await peers.offer("user-a");
     expect(created).toHaveLength(1);
     expect(created[0]!.senders.map((sender) => sender.track)).toEqual([track]);
+  });
+
+  it("envia tela e câmera juntas e remove só as tracks pedidas", async () => {
+    const screen = { kind: "video" } as MediaStreamTrack;
+    const camera = { kind: "video" } as MediaStreamTrack;
+    const peers = new PeerManager({
+      localId: "user-z",
+      configuration: {},
+      getLocalStreams: () => [
+        { getTracks: () => [screen] } as MediaStream,
+        { getTracks: () => [camera] } as MediaStream,
+      ],
+      getVideoBitrate: () => 10_000_000,
+      preferH264: () => true,
+      send: vi.fn(),
+      onRemoteStream: vi.fn(),
+      onConnectionState: vi.fn(),
+      onMediaStatus: vi.fn(),
+      onError: vi.fn(),
+    });
+    await peers.offer("user-a");
+    expect(created[0]!.senders.map((sender) => sender.track)).toEqual([screen, camera]);
+
+    peers.removeLocalTracks([camera]);
+    expect(created[0]!.senders.map((sender) => sender.track)).toEqual([screen]);
+  });
+
+  it("segura o segundo offer até o answer do primeiro chegar", async () => {
+    const peers = manager(() => null);
+    await peers.offer("user-a");
+    await peers.offer("user-a");
+    const connection = created[0]!;
+    expect(connection.localDescriptions.map((item) => item.type)).toEqual(["offer"]);
+
+    await peers.handleDescription("user-a", "answer", "v=0 answer");
+    expect(connection.localDescriptions.map((item) => item.type)).toEqual(["offer", "offer"]);
   });
 
   it("faz rollback no lado polite durante colisão de offers", async () => {

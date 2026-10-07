@@ -6,6 +6,8 @@ export interface SignalParticipant {
   name: string;
   sharing: boolean;
   connected: boolean;
+  camera?: boolean;
+  cameraStreamId?: string;
 }
 
 export interface ClientAuthentication {
@@ -18,7 +20,8 @@ export interface ClientAuthentication {
 }
 
 export type ClientSignal =
-  | { type: "ping" | "leave" | "share-started" | "share-stopped" }
+  | { type: "ping" | "leave" | "share-started" | "share-stopped" | "camera-stopped" }
+  | { type: "camera-started"; streamId: string }
   | { type: "watch-started" | "watch-stopped"; to: string }
   | { type: "offer" | "answer"; to: string; sdp: string }
   | { type: "ice"; to: string; candidate: RTCIceCandidateInit };
@@ -32,6 +35,8 @@ export type ServerSignal =
   | { type: "participant-presence"; participantId: string; connected: boolean }
   | { type: "share-started"; participantId: string; name?: string }
   | { type: "share-stopped"; participantId: string }
+  | { type: "camera-started"; participantId: string; streamId: string }
+  | { type: "camera-stopped"; participantId: string }
   | { type: "watch-started" | "watch-stopped"; from: string; to: string; name?: string }
   | { type: "offer" | "answer"; from: string; sdp: string }
   | { type: "ice"; from: string; candidate: RTCIceCandidateInit };
@@ -83,6 +88,12 @@ export function parseServerSignal(raw: unknown): ServerSignal | null {
   if (value.type === "share-stopped" && isId(value.participantId)) {
     return { type: value.type, participantId: value.participantId };
   }
+  if (value.type === "camera-started" && isId(value.participantId) && isId(value.streamId)) {
+    return { type: value.type, participantId: value.participantId, streamId: value.streamId };
+  }
+  if (value.type === "camera-stopped" && isId(value.participantId)) {
+    return { type: value.type, participantId: value.participantId };
+  }
   if (
     (value.type === "watch-started" || value.type === "watch-stopped") &&
     isId(value.from) &&
@@ -110,7 +121,9 @@ function isParticipant(value: unknown): value is SignalParticipant {
     isId(value.id) &&
     typeof value.name === "string" &&
     typeof value.sharing === "boolean" &&
-    (typeof value.connected === "boolean" || value.connected === undefined)
+    (typeof value.connected === "boolean" || value.connected === undefined) &&
+    (typeof value.camera === "boolean" || value.camera === undefined) &&
+    (value.cameraStreamId === undefined || isId(value.cameraStreamId))
   );
 }
 
