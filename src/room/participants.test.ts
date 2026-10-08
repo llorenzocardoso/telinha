@@ -78,6 +78,17 @@ describe("describeParticipants", () => {
     ]);
   });
 
+  it("diz quem é a pessoa local e quem está desconectado", () => {
+    const rows = describe_([
+      person("me", { isLocal: true }),
+      person("ana", { connected: false }),
+    ]);
+    expect(rows.map((row) => [row.id, row.self, row.connected])).toEqual([
+      ["me", true, true],
+      ["ana", false, false],
+    ]);
+  });
+
   it("devolve lista vazia sem ninguém na sala", () => {
     expect(describe_([])).toEqual([]);
   });

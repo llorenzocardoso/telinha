@@ -15,7 +15,11 @@ import { buildIceServers } from "../lib/ice";
 import { parseServerSignal, type ClientSignal } from "../lib/protocol";
 import { playStreamStarted, playViewerJoined } from "../lib/sounds";
 import { CAMERA_MAX_BITRATE, loadCameraDeviceId, startCameraStream } from "../media/camera";
-import { needsNativeAudioLoopback, startDisplayMediaShare } from "../media/displayShare";
+import {
+  ShareCancelledError,
+  needsNativeAudioLoopback,
+  startDisplayMediaShare,
+} from "../media/displayShare";
 import { isTauriRuntime } from "../lib/runtime";
 import { createShareAudioPump, createShareAudioTrack } from "../media/shareAudio";
 import { ConnectionState } from "./connectionState";
@@ -855,8 +859,11 @@ export function useTelinhaRoom(
         sendSignal({ type: "share-started" });
       } catch (error) {
         await cleanupNativeShare();
-        recordDiagnostic("share-start-failed", { message: errorMessage(error) });
-        setError(error instanceof Error ? error.message : "Não foi possível compartilhar");
+        // Fechar o seletor é uma escolha da pessoa, não um erro: nada de aviso na tela.
+        if (!(error instanceof ShareCancelledError)) {
+          recordDiagnostic("share-start-failed", { message: errorMessage(error) });
+          setError(error instanceof Error ? error.message : "Não foi possível compartilhar");
+        }
         throw error;
       }
     },

@@ -74,20 +74,6 @@
   font-size: var(--text-sm);
 }
 
-.watch-badge.is-code {
-  color: var(--text-2);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: 0.08em;
-}
-
-.watch-badge-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-pill);
-  background: var(--live);
-}
-
 .watch-status {
   position: absolute;
   top: var(--space-4);
@@ -109,14 +95,12 @@
 /* Os controles somem quando o mouse para e voltam ao mover. */
 .screen.watch.chrome-off .watch-badges,
 .screen.watch.chrome-off .watch-status,
-.screen.watch.chrome-off .ui-dock,
-.screen.watch.chrome-off .camera-strip.overlay {
+.screen.watch.chrome-off .ui-dock {
   opacity: 0;
   pointer-events: none;
 }
 
-.screen.watch .ui-dock,
-.screen.watch .camera-strip.overlay {
+.screen.watch .ui-dock {
   transition: opacity 0.2s ease;
 }
 
@@ -126,25 +110,23 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  padding-right: var(--space-2);
-  border-right: 1px solid var(--hairline);
 }
 
 .watch-switcher-item {
   display: inline-flex;
-  padding: 2px;
-  border: 2px solid transparent;
-  border-radius: var(--radius-pill);
+  padding: var(--space-1);
+  border: 0;
+  border-radius: var(--radius-md);
   background: transparent;
   cursor: pointer;
 }
 
 .watch-switcher-item:hover {
-  border-color: var(--line);
+  background: var(--surface-3);
 }
 
 .watch-switcher-item.is-active {
-  border-color: var(--text);
+  background: var(--surface-4);
 }
 
 .watch-switcher-item:focus-visible {

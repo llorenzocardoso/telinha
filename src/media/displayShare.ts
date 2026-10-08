@@ -31,6 +31,17 @@ export function displayMediaOptions(
   };
 }
 
+/** A pessoa fechou o seletor de tela sem escolher nada. Não é uma falha. */
+export class ShareCancelledError extends Error {
+  constructor(cause?: unknown) {
+    super("Seleção de tela cancelada.");
+    this.name = "ShareCancelledError";
+    this.cause = cause;
+  }
+  // O lib do projeto ainda não tipa Error.cause.
+  cause?: unknown;
+}
+
 export async function startDisplayMediaShare(
   quality: ShareQuality,
   _sourceId: string,
@@ -60,7 +71,7 @@ export async function startDisplayMediaShare(
       error instanceof DOMException &&
       (error.name === "NotAllowedError" || error.name === "AbortError")
     ) {
-      throw Object.assign(new Error("Seleção de tela cancelada."), { cause: error });
+      throw new ShareCancelledError(error);
     }
     throw error;
   }

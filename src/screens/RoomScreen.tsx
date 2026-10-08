@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bell, BellOff, PhoneOff, Settings, Video, VideoOff } from "lucide-react";
+import { Bell, BellOff, Link, LogOut, Monitor, Settings, Square, Video, VideoOff } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import type { RoomSession } from "../lib/api";
@@ -27,7 +27,15 @@ import { VideoTile } from "../components/VideoTile";
 import { LiveControls } from "../components/LiveControls";
 import { RoomLayout } from "../components/RoomLayout";
 import { describeParticipants } from "../room/participants";
-import { Button, ConnectionIndicator, Dock, EmptyState, IconButton } from "../components/ui";
+import {
+  Avatar,
+  Button,
+  ConnectionIndicator,
+  Dock,
+  EmptyState,
+  IconButton,
+  RoomCode,
+} from "../components/ui";
 
 interface RoomScreenProps {
   session: RoomSession;
@@ -105,7 +113,6 @@ export function RoomScreen({
     cameras,
     participants,
     watcherCounts,
-    watcherNames,
     watcherIds,
     connectionQuality,
     copyDiagnostics,
@@ -595,12 +602,15 @@ export function RoomScreen({
         {/* Dois selos flutuantes: o que está na tela e o código da sala. */}
         <div className="watch-badges">
           <span className="watch-badge">
-            <span className="watch-badge-dot" aria-hidden="true" />
+            {multiWatch ? (
+              <Monitor aria-hidden="true" strokeWidth={1.8} />
+            ) : (
+              <Avatar name={watchingShares[0]?.participantName ?? "?"} live />
+            )}
             {multiWatch
               ? `${watchingShares.length} transmissões`
               : `Tela de ${watchingShares[0]?.participantName ?? ""}`}
           </span>
-          <span className="watch-badge is-code">{session.code}</span>
         </div>
 
         <div className="watch-status">
@@ -608,9 +618,10 @@ export function RoomScreen({
           {isSharing && (
             <span className="watch-self">Sua tela está ao vivo · {localViewers} assistindo</span>
           )}
+          <RoomCode code={session.code} onCopy={copyRoomCode} />
         </div>
 
-        <CameraStrip cameras={cameras} variant="overlay" onOpenSettings={openCameraSettings} />
+        <CameraStrip cameras={cameras} onOpenSettings={openCameraSettings} />
 
         <LiveControls
           volumes={watchingShares.map((share) => ({
@@ -677,6 +688,7 @@ export function RoomScreen({
     </div>
   ) : remoteShares.length > 0 ? (
     <EmptyState
+      icon={<Monitor strokeWidth={1.8} />}
       title={
         remoteShares.length === 1
           ? `Tela de ${remoteShares[0]!.participantName}`
@@ -698,17 +710,19 @@ export function RoomScreen({
     />
   ) : (
     <EmptyState
+      icon={<Monitor strokeWidth={1.8} />}
       title="Ninguém transmitindo ainda"
       hint="Mande o convite pra galera ou comece você mesmo pela barra abaixo."
       actions={
         <>
           <Button
             variant="tonal"
+            icon={<Link strokeWidth={1.8} />}
             onClick={() => void copyWithToast(inviteLink(session.code), "Convite copiado")}
           >
             Copiar convite
           </Button>
-          <Button variant="outline" onClick={() => void copyCode()}>
+          <Button variant="ghost" onClick={() => void copyCode()}>
             {copied ? "Copiado!" : "Copiar código"}
           </Button>
         </>
@@ -720,9 +734,10 @@ export function RoomScreen({
   const dock = (
     <Dock label="Controles da sala" variant="fixed">
       <Button
-        variant={isSharing ? "danger" : "primary"}
+        variant="primary"
         size="lg"
-        shortcut="Ctrl+Shift+S"
+        icon={isSharing ? <Square strokeWidth={1.8} fill="currentColor" /> : <Monitor strokeWidth={1.8} />}
+        shortcut="Ctrl⇧S"
         disabled={!connected}
         onClick={toggleOwnShare}
       >
@@ -731,7 +746,7 @@ export function RoomScreen({
       <IconButton
         label={cameraHint}
         icon={cameraIcon}
-        variant="tonal"
+        size="lg"
         active={isCameraOn}
         disabled={!cameraReady}
         onClick={toggleCamera}
@@ -739,14 +754,15 @@ export function RoomScreen({
       <IconButton
         label="Escolher câmera"
         icon={<Settings aria-hidden="true" strokeWidth={1.8} />}
+        size="lg"
         onClick={openCameraSettings}
       />
-      <Button
-        variant="outline"
+      <IconButton
+        label="Copiar convite"
+        icon={<Link aria-hidden="true" strokeWidth={1.8} />}
+        size="lg"
         onClick={() => void copyWithToast(inviteLink(session.code), "Convite copiado")}
-      >
-        Copiar convite
-      </Button>
+      />
       <IconButton
         label={roomSounds ? "Silenciar avisos da sala" : "Ativar avisos da sala"}
         icon={
@@ -756,11 +772,13 @@ export function RoomScreen({
             <BellOff aria-hidden="true" strokeWidth={1.8} />
           )
         }
+        size="lg"
         onClick={toggleRoomSounds}
       />
       <IconButton
         label="Sair da sala"
-        icon={<PhoneOff aria-hidden="true" strokeWidth={1.8} />}
+        icon={<LogOut aria-hidden="true" strokeWidth={1.8} />}
+        size="lg"
         variant="danger"
         onClick={onLeave}
       />
@@ -778,14 +796,7 @@ export function RoomScreen({
       dock={dock}
       onWatch={watchOnly}
     >
-      <CameraStrip cameras={cameras} variant="row" onOpenSettings={openCameraSettings} />
-      {isSharing && (
-        <p className="room-viewers" aria-live="polite">
-          {localViewers === 0
-            ? "Ninguém assistindo ainda"
-            : `Assistindo: ${watcherNames[localId]?.join(", ") ?? localViewers}`}
-        </p>
-      )}
+      <CameraStrip cameras={cameras} onOpenSettings={openCameraSettings} />
       {reconnecting && <p className="room-banner">A conexão caiu. Tentando de novo...</p>}
       {error && (
         <ErrorNotice

@@ -7,6 +7,10 @@ export interface ParticipantState {
   status: string;
   /** Ponto vermelho no avatar: esta pessoa transmite. */
   live: boolean;
+  /** É a pessoa local. */
+  self: boolean;
+  /** Está fora do ar no sinal (reconectando). */
+  connected: boolean;
   /** Dá para assistir esta pessoa agora. */
   watchable: boolean;
   /** Já estou assistindo esta pessoa. */
@@ -38,6 +42,8 @@ export function describeParticipants(input: DescribeInput): ParticipantState[] {
       id: person.identity,
       name: person.name,
       status: statusOf(person, isLocal, watchers.has(person.identity)),
+      self: isLocal,
+      connected: person.connected,
       live: person.isSharing,
       // Só dá para assistir quem transmite, está conectado e não sou eu.
       watchable: !isLocal && person.isSharing && person.connected,

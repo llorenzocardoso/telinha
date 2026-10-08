@@ -8,6 +8,8 @@ interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "cla
   size?: ButtonSize;
   /** Ocupa toda a largura disponível. */
   block?: boolean;
+  /** Ícone à esquerda do rótulo (Lucide, 18px). */
+  icon?: ReactNode;
   /** Atalho mostrado à direita do rótulo, em mono. */
   shortcut?: string;
   children: ReactNode;
@@ -22,6 +24,7 @@ export function Button({
   size = "md",
   block,
   shortcut,
+  icon,
   type = "button",
   children,
   ...rest
@@ -34,6 +37,7 @@ export function Button({
         .filter(Boolean)
         .join(" ")}
     >
+      {icon && <span className="ui-button-icon" aria-hidden="true">{icon}</span>}
       <span className="ui-button-label">{children}</span>
       {shortcut && <kbd className="ui-button-shortcut">{shortcut}</kbd>}
     </button>

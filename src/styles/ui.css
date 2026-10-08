@@ -95,6 +95,20 @@
   outline-offset: 2px;
 }
 
+.ui-button-icon {
+  display: inline-flex;
+}
+
+.ui-button-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .ui-button-shortcut {
   padding: 2px var(--space-1);
   border-radius: var(--radius-sm);
@@ -165,6 +179,7 @@
 }
 
 .ui-icon-button.is-danger {
+  background: var(--live-bg);
   color: var(--live);
 }
 
@@ -211,7 +226,7 @@
 
 .ui-chip.is-live {
   background: var(--live-bg);
-  color: var(--live);
+  color: var(--live-text);
 }
 
 /* ---------- Avatar ---------- */
@@ -244,6 +259,16 @@
   font-size: var(--text-md);
 }
 
+.ui-avatar.is-bright {
+  background: var(--text);
+  color: var(--on-primary);
+}
+
+.ui-avatar.is-dim {
+  background: var(--surface-3);
+  color: var(--faint);
+}
+
 .ui-avatar.is-rest {
   background: var(--surface-3);
   color: var(--faint);
@@ -267,7 +292,10 @@
 
 .ui-avatar-stack .ui-avatar + .ui-avatar {
   margin-left: -8px;
-  box-shadow: 0 0 0 2px var(--surface-1);
+}
+
+.ui-avatar-stack .ui-avatar {
+  box-shadow: 0 0 0 2px var(--bg);
 }
 
 /* ---------- LiveBadge ---------- */
@@ -280,7 +308,7 @@
   padding: 0 var(--space-3);
   border-radius: var(--radius-pill);
   background: var(--live-bg);
-  color: var(--live);
+  color: var(--live-text);
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
 }
@@ -307,15 +335,15 @@
   font-size: var(--text-xs);
 }
 
-.ui-connection-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-pill);
-  background: currentColor;
+.ui-connection svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
 }
 
 .ui-connection.is-good {
-  color: var(--text-2);
+  color: var(--muted);
 }
 
 .ui-connection.is-reconnecting,
@@ -331,7 +359,7 @@
   gap: var(--space-2);
   height: var(--control-sm);
   padding: 0 var(--space-3);
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius-md);
   background: var(--surface-2);
   color: var(--text);
@@ -496,6 +524,28 @@
   text-align: center;
 }
 
+.ui-empty-state-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-lg);
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+
+.ui-empty-state-icon svg {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .ui-empty-state strong {
   color: var(--text);
   font-size: var(--text-lg);
@@ -521,24 +571,15 @@
 .ui-participants {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border-radius: var(--radius-lg);
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
   background: var(--surface-1);
 }
 
 .ui-participants-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--faint);
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.ui-participants-header strong {
-  color: var(--text-2);
+  color: var(--muted);
+  font-size: var(--text-sm);
 }
 
 .ui-participants-empty {
@@ -549,7 +590,7 @@
 .ui-participants ul {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-3);
   list-style: none;
 }
 
@@ -557,12 +598,12 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-2);
-  border-radius: var(--radius-md);
+  padding: var(--space-1) 0;
 }
 
-.ui-participants li:hover {
-  background: var(--surface-2);
+.ui-participants li.is-dim .ui-participant-copy strong,
+.ui-participants li.is-dim .ui-participant-copy small {
+  color: var(--faint);
 }
 
 .ui-participant-copy {
@@ -595,10 +636,24 @@
 }
 
 .ui-dock.is-fixed {
+  align-self: center;
   justify-content: center;
-  padding: var(--space-3) var(--space-4);
-  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+  max-width: calc(100% - var(--space-8));
+  margin: 0 auto var(--space-4);
+  padding: var(--space-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-xl);
   background: var(--surface-1);
+  box-shadow: var(--shadow-dock);
+}
+
+.ui-dock-divider {
+  width: 1px;
+  height: 24px;
+  flex: 0 0 auto;
+  margin: 0 var(--space-1);
+  background: var(--line);
 }
 
 .ui-dock.is-floating {

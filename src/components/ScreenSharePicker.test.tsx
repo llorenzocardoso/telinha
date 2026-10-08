@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ScreenSharePicker } from "./ScreenSharePicker";
 import { QUALITY_KEY } from "../media/shareQuality";
+import { ShareCancelledError } from "../media/displayShare";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../lib/runtime", () => ({ isTauriRuntime: () => true }));
@@ -102,13 +103,28 @@ describe("ScreenSharePicker", () => {
   });
 
   it("mostra o erro e volta a liberar o botão", async () => {
-    const onShare = vi.fn().mockRejectedValue(new Error("Seleção de tela cancelada."));
+    const onShare = vi.fn().mockRejectedValue(new Error("O Windows não retornou uma faixa de vídeo."));
     render(<ScreenSharePicker onCancel={vi.fn()} onShare={onShare} />);
     fireEvent.click(screen.getByRole("button", { name: /Escolher janela/ }));
-    expect((await screen.findByRole("alert")).textContent).toBe("Seleção de tela cancelada.");
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "O Windows não retornou uma faixa de vídeo.",
+    );
     expect(
       screen.getByRole("button", { name: /Escolher janela/ }).hasAttribute("disabled"),
     ).toBe(false);
+  });
+
+  it("não trata o cancelamento da escolha de tela como erro", async () => {
+    const onShare = vi.fn().mockRejectedValue(new ShareCancelledError());
+    render(<ScreenSharePicker onCancel={vi.fn()} onShare={onShare} />);
+    fireEvent.click(screen.getByRole("button", { name: /Escolher janela/ }));
+    await waitFor(() => expect(onShare).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Escolher janela/ }).hasAttribute("disabled"),
+      ).toBe(false),
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("fecha no Esc e no Cancelar", () => {

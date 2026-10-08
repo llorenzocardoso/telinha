@@ -50,6 +50,8 @@
   /* Sinal: só "ao vivo" e "sair" */
   --live: #ff5148;
   --live-bg: #2a1615;
+  /* Texto sobre o fundo "ao vivo": um pouco mais claro que o ponto, para ler bem. */
+  --live-text: #ff8c84;
 
   /* O botão primário é claro, então o que vai sobre ele é escuro. */
   --primary: var(--text);

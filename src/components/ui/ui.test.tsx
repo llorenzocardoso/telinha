@@ -255,7 +255,12 @@ describe("ParticipantList", () => {
 
 describe("AvatarStack", () => {
   it("resume o excedente e descreve quem está na sala", () => {
-    render(<AvatarStack names={["Ana", "Bruno", "Caio", "Dani", "Edu"]} max={3} />);
+    render(
+      <AvatarStack
+        max={3}
+        people={["Ana", "Bruno", "Caio", "Dani", "Edu"].map((name) => ({ id: name, name }))}
+      />,
+    );
     expect(screen.getByRole("img").getAttribute("aria-label")).toBe(
       "Na sala: Ana, Bruno, Caio, Dani e Edu",
     );

@@ -1,4 +1,4 @@
-import { Columns2, Maximize2, Minimize2, PhoneOff, ScreenShare, ScreenShareOff, Video, VideoOff, X } from "lucide-react";
+import { Columns2, LogOut, Maximize2, Minimize2, Monitor, Video, VideoOff, X } from "lucide-react";
 import { Avatar, Dock, IconButton } from "./ui";
 import { VolumeControl } from "./VolumeControl";
 
@@ -62,26 +62,29 @@ export function LiveControls({
   return (
     <Dock label="Controles da transmissão" variant="floating" onHoldChange={onLockChange}>
       {choices.length > 1 && (
-        <div className="watch-switcher" role="group" aria-label="Escolher transmissão">
-          {choices.map((choice) => (
-            <button
-              key={choice.id}
-              type="button"
-              className={`watch-switcher-item ${choice.active ? "is-active" : ""}`}
-              aria-label={`Assistir ${choice.name}`}
-              aria-pressed={choice.active}
-              onClick={() => onWatchOnly(choice.id)}
-            >
-              <Avatar name={choice.name} size="sm" live />
-            </button>
-          ))}
-          <IconButton
-            label="Ver lado a lado"
-            icon={<Columns2 aria-hidden="true" strokeWidth={1.8} />}
-            active={sideBySide}
-            onClick={onWatchAll}
-          />
-        </div>
+        <>
+          <div className="watch-switcher" role="group" aria-label="Escolher transmissão">
+            {choices.map((choice) => (
+              <button
+                key={choice.id}
+                type="button"
+                className={`watch-switcher-item ${choice.active ? "is-active" : ""}`}
+                aria-label={`Assistir ${choice.name}`}
+                aria-pressed={choice.active}
+                onClick={() => onWatchOnly(choice.id)}
+              >
+                <Avatar name={choice.name} tone={choice.active ? "bright" : "default"} />
+              </button>
+            ))}
+            <IconButton
+              label="Ver lado a lado"
+              icon={<Columns2 aria-hidden="true" strokeWidth={1.8} />}
+              active={sideBySide}
+              onClick={onWatchAll}
+            />
+          </div>
+          <span className="ui-dock-divider" aria-hidden="true" />
+        </>
       )}
 
       <div className="watch-volumes">
@@ -108,15 +111,13 @@ export function LiveControls({
         onClick={onToggleFullscreen}
       />
 
+      <span className="ui-dock-divider" aria-hidden="true" />
+
       <IconButton
         label={isSharing ? "Parar minha transmissão" : "Transmitir também"}
-        icon={
-          isSharing ? (
-            <ScreenShareOff aria-hidden="true" strokeWidth={1.8} />
-          ) : (
-            <ScreenShare aria-hidden="true" strokeWidth={1.8} />
-          )
-        }
+        icon={<Monitor aria-hidden="true" strokeWidth={1.8} />}
+        size="lg"
+        variant="tonal"
         active={isSharing}
         disabled={!connected}
         onClick={onToggleShare}
@@ -131,6 +132,7 @@ export function LiveControls({
             <VideoOff aria-hidden="true" strokeWidth={1.8} />
           )
         }
+        size="lg"
         active={cameraOn}
         disabled={!cameraReady}
         onClick={onToggleCamera}
@@ -140,12 +142,14 @@ export function LiveControls({
       <IconButton
         label="Parar de assistir"
         icon={<X aria-hidden="true" strokeWidth={1.8} />}
+        size="lg"
         onClick={onStopWatching}
       />
 
       <IconButton
         label="Sair da sala"
-        icon={<PhoneOff aria-hidden="true" strokeWidth={1.8} />}
+        icon={<LogOut aria-hidden="true" strokeWidth={1.8} />}
+        size="lg"
         variant="danger"
         onClick={onLeaveRoom}
       />

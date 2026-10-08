@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
+import { Monitor } from "lucide-react";
 import type { ConnectionQuality } from "../room/connectionQuality";
 import type { ParticipantState } from "../room/participants";
 import {
+  AvatarStack,
   Button,
   ConnectionIndicator,
   LiveBadge,
@@ -22,9 +24,12 @@ interface RoomLayoutProps {
   /** A dock, sempre no mesmo lugar nas duas telas. */
   dock: ReactNode;
   onWatch: (id: string) => void;
-  /** Camadas soltas: avisos, diálogos, faixa de câmeras. */
+  /** Camadas soltas: avisos, diálogos, câmeras flutuantes. */
   children?: ReactNode;
 }
+
+const toneOf = (person: ParticipantState) =>
+  person.self ? "bright" : person.connected ? "default" : "dim";
 
 /**
  * Um layout para as duas telas da sala (seções 2.3 e 2.5). Só o palco muda; cabeçalho,
@@ -45,6 +50,7 @@ export function RoomLayout({
     id: person.id,
     name: person.name,
     status: person.status,
+    tone: toneOf(person),
     live: person.live,
     action: person.watchable ? (
       <Button
@@ -61,10 +67,10 @@ export function RoomLayout({
     <div className="screen room">
       <header className="room-head">
         <div className="room-head-left">
-          <span className="room-brand">Telinha</span>
+          <span className="room-logo" role="img" aria-label="Telinha">
+            <Monitor aria-hidden="true" strokeWidth={1.8} />
+          </span>
           <RoomCode code={code} onCopy={onCopyCode} />
-        </div>
-        <div className="room-head-right">
           {airTimeMs === undefined ? (
             <ConnectionIndicator quality={connectionQuality} alwaysVisible />
           ) : (
@@ -74,6 +80,13 @@ export function RoomLayout({
             </>
           )}
         </div>
+        <AvatarStack
+          people={people.map((person) => ({
+            id: person.id,
+            name: person.name,
+            tone: toneOf(person),
+          }))}
+        />
       </header>
 
       <div className="room-body">

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ShareQuality } from "../hooks/useTelinhaRoom";
 import { isTauriRuntime } from "../lib/runtime";
+import { ShareCancelledError } from "../media/displayShare";
 import {
   FPS_HINTS,
   QUALITY_KEY,
@@ -70,7 +71,10 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
         }),
       );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível compartilhar");
+      // Cancelar a escolha de tela só devolve a pessoa ao diálogo, sem mensagem de erro.
+      if (!(cause instanceof ShareCancelledError)) {
+        setError(cause instanceof Error ? cause.message : "Não foi possível compartilhar");
+      }
       setSharing(false);
     }
   }

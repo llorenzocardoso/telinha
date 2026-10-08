@@ -1,0 +1,87 @@
+/* Câmeras flutuantes: o quadrado pode ser arrastado (segure o clique e mova). */
+
+.camera-strip {
+  position: absolute;
+  top: 72px;
+  left: var(--space-6);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  /* Só os quadrados recebem o ponteiro; o resto da faixa deixa o clique passar. */
+  pointer-events: none;
+}
+
+.camera-tile {
+  position: relative;
+  width: clamp(168px, 22vw, 280px);
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  box-shadow: var(--shadow-dock);
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+}
+
+.camera-tile.is-dragging {
+  z-index: 6;
+  cursor: grabbing;
+}
+
+.camera-tile .video-tile video {
+  object-fit: cover;
+  pointer-events: none;
+}
+
+/* A própria câmera aparece espelhada, como num espelho. */
+.camera-tile.local video {
+  transform: scaleX(-1);
+}
+
+.camera-tile-name {
+  position: absolute;
+  left: var(--space-2);
+  bottom: var(--space-2);
+  max-width: calc(100% - var(--space-4));
+  overflow: hidden;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--scrim);
+  color: var(--text);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.camera-tile-settings {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--scrim);
+  color: var(--text);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.camera-tile:hover .camera-tile-settings,
+.camera-tile-settings:focus-visible {
+  opacity: 1;
+}
+
+.camera-tile-settings svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+}
