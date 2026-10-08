@@ -1,5 +1,6 @@
 import type { ClientSignal } from "../lib/protocol";
 import type { PeerHealthSample } from "./connectionQuality";
+import { isRelayRoute, videoBitrateFor } from "./relay";
 
 const AUDIO_MAX_BITRATE = 320_000;
 
@@ -16,6 +17,8 @@ interface PeerEntry {
   mediaRecoveryAt?: number;
   mediaFailureReported: boolean;
   forceVp8: boolean;
+  /** Última rota conhecida; mudar de direta para relay reaplica o teto de bitrate. */
+  relayRoute: boolean;
   lastMediaStatus?: MediaDeliveryStatus;
   localIceCandidates: number;
   remoteIceCandidates: number;
@@ -39,6 +42,8 @@ interface PeerManagerOptions {
   getCameraStream: () => MediaStream | null;
   shouldSendTo: (peerId: string) => boolean;
   getVideoBitrate: (track: MediaStreamTrack) => number;
+  /** Teto de vídeo em kbps quando a rota é relay; null significa sem limite. */
+  getRelayCapKbps?: () => number | null | undefined;
   preferH264: () => boolean;
   send: (message: ClientSignal) => void;
   onRemoteStream: (peerId: string, stream: MediaStream) => void;
@@ -231,11 +236,20 @@ export class PeerManager {
         sample.remoteSrflxCandidates = entry.remoteCandidateTypes.srflx ?? 0;
         sample.remoteRelayCandidates = entry.remoteCandidateTypes.relay ?? 0;
         sample.iceTransportPolicy = entry.connection.getConfiguration?.().iceTransportPolicy ?? "all";
+        await this.trackRelayRoute(entry, sample);
         this.evaluateMedia(peerId, entry, sample);
         return sample;
       }),
     );
     return samples.filter((sample): sample is PeerHealthSample => sample !== null);
+  }
+
+  /** Só reaplica o bitrate quando a rota realmente troca de direta para relay, ou o contrário. */
+  private async trackRelayRoute(entry: PeerEntry, sample: PeerHealthSample): Promise<void> {
+    const relay = isRelayRoute(sample);
+    if (relay === entry.relayRoute) return;
+    entry.relayRoute = relay;
+    await this.applyBitrate(entry);
   }
 
   private ensure(peerId: string): PeerEntry {
@@ -261,6 +275,7 @@ export class PeerManager {
       iceRestarted: false,
       mediaFailureReported: false,
       forceVp8: false,
+      relayRoute: false,
       localIceCandidates: 0,
       remoteIceCandidates: 0,
       localCandidateTypes: {},
@@ -358,7 +373,14 @@ export class PeerManager {
       const track = sender.track;
       const kind = track?.kind;
       if (!track || (kind !== "video" && kind !== "audio")) continue;
-      const maxBitrate = kind === "video" ? this.options.getVideoBitrate(track) : AUDIO_MAX_BITRATE;
+      const maxBitrate =
+        kind === "video"
+          ? videoBitrateFor(
+              this.options.getVideoBitrate(track),
+              this.options.getRelayCapKbps?.(),
+              entry.relayRoute,
+            )
+          : AUDIO_MAX_BITRATE;
       const params = sender.getParameters();
       params.degradationPreference = "maintain-framerate";
       const encoding = { maxBitrate, ...(kind === "video" ? { priority: "high" as const } : {}) };

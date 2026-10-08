@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PeerManager } from "./peerManager";
 
+interface MockSender {
+  track: MediaStreamTrack | null;
+  applied: RTCRtpSendParameters[];
+  getParameters: () => RTCRtpSendParameters;
+  setParameters: (parameters: RTCRtpSendParameters) => Promise<void>;
+}
+
 class MockPeerConnection {
   connectionState: RTCPeerConnectionState = "new";
   signalingState: RTCSignalingState = "stable";
@@ -9,7 +16,7 @@ class MockPeerConnection {
   onicecandidate: RTCPeerConnection["onicecandidate"] = null;
   ontrack: RTCPeerConnection["ontrack"] = null;
   onconnectionstatechange: RTCPeerConnection["onconnectionstatechange"] = null;
-  senders: { track: MediaStreamTrack | null; getParameters: () => RTCRtpSendParameters; setParameters: () => Promise<void> }[] = [];
+  senders: MockSender[] = [];
   localDescriptions: RTCSessionDescriptionInit[] = [];
   stats = new Map<string, Record<string, unknown>>();
   closed = 0;
@@ -17,10 +24,13 @@ class MockPeerConnection {
   offerGate: Promise<void> | null = null;
 
   addTrack(track: MediaStreamTrack) {
-    const sender = {
+    const sender: MockSender = {
       track,
+      applied: [],
       getParameters: () => ({ encodings: [] }) as unknown as RTCRtpSendParameters,
-      setParameters: async () => undefined,
+      async setParameters(parameters: RTCRtpSendParameters) {
+        sender.applied.push(parameters);
+      },
     };
     this.senders.push(sender);
     return sender as unknown as RTCRtpSender;
@@ -338,6 +348,92 @@ describe("PeerManager", () => {
     await peers.collectHealth();
     expect(onMediaStatus).toHaveBeenCalledWith("user-a", "recovering-network");
     expect(connection.localDescriptions[connection.localDescriptions.length - 1]?.type).toBe("offer");
+  });
+
+  describe("teto de bitrate no relay", () => {
+    const track = { kind: "video" } as MediaStreamTrack;
+    const stream = { getTracks: () => [track] } as MediaStream;
+
+    /** Monta o relatório mínimo que readHealth lê para descobrir a rota escolhida. */
+    function routeStats(localType: string) {
+      return new Map<string, Record<string, unknown>>([
+        [
+          "pair",
+          {
+            type: "candidate-pair",
+            state: "succeeded",
+            nominated: true,
+            localCandidateId: "local",
+            remoteCandidateId: "remote",
+          },
+        ],
+        ["local", { type: "local-candidate", candidateType: localType, protocol: "udp" }],
+        ["remote", { type: "remote-candidate", candidateType: "srflx", protocol: "udp" }],
+      ]);
+    }
+
+    function relayManager(cap: number | null) {
+      return new PeerManager({
+        localId: "user-z",
+        configuration: {},
+        getShareStream: () => stream,
+        getCameraStream: () => null,
+        shouldSendTo: () => true,
+        getVideoBitrate: () => 10_000_000,
+        getRelayCapKbps: () => cap,
+        preferH264: () => true,
+        send: vi.fn(),
+        onRemoteStream: vi.fn(),
+        onConnectionState: vi.fn(),
+        onMediaStatus: vi.fn(),
+        onError: vi.fn(),
+      });
+    }
+
+    const lastBitrate = (connection: MockPeerConnection) => {
+      const applied = connection.senders[0]!.applied;
+      return applied[applied.length - 1]?.encodings?.[0]?.maxBitrate;
+    };
+
+    it("limita no relay e restaura quando a rota volta a ser direta", async () => {
+      const peers = relayManager(900);
+      await peers.offer("user-a");
+      const connection = created[0]!;
+      connection.connectionState = "connected";
+      expect(lastBitrate(connection)).toBe(10_000_000);
+
+      connection.stats = routeStats("relay");
+      await peers.collectHealth();
+      expect(lastBitrate(connection)).toBe(900_000);
+
+      connection.stats = routeStats("srflx");
+      await peers.collectHealth();
+      expect(lastBitrate(connection)).toBe(10_000_000);
+    });
+
+    it("não reaplica nada enquanto a rota não muda", async () => {
+      const peers = relayManager(900);
+      await peers.offer("user-a");
+      const connection = created[0]!;
+      connection.connectionState = "connected";
+      connection.stats = routeStats("relay");
+
+      await peers.collectHealth();
+      const afterFirst = connection.senders[0]!.applied.length;
+      await peers.collectHealth();
+      expect(connection.senders[0]!.applied).toHaveLength(afterFirst);
+    });
+
+    it("ignora o relay quando não há teto configurado", async () => {
+      const peers = relayManager(null);
+      await peers.offer("user-a");
+      const connection = created[0]!;
+      connection.connectionState = "connected";
+      connection.stats = routeStats("relay");
+
+      await peers.collectHealth();
+      expect(lastBitrate(connection)).toBe(10_000_000);
+    });
   });
 
   it("conta candidatos por tipo e força relay no primeiro failed", async () => {

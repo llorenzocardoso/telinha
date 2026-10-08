@@ -22,6 +22,8 @@ export interface RoomSession {
   wsAuthMode?: "message" | "query";
   iceServers?: SessionIceServer[];
   features?: string[];
+  /** Teto de vídeo em kbps quando a rota ICE é relay; null significa sem limite. */
+  turnMaxBitrateKbps?: number | null;
 }
 
 export interface AppConfig {
@@ -123,6 +125,10 @@ function parseRoomSession(data: Record<string, unknown>): RoomSession {
     features: Array.isArray(data.features)
       ? data.features.filter((feature): feature is string => typeof feature === "string")
       : undefined,
+    turnMaxBitrateKbps:
+      typeof data.turnMaxBitrateKbps === "number" && Number.isFinite(data.turnMaxBitrateKbps)
+        ? data.turnMaxBitrateKbps
+        : null,
   };
 }
 

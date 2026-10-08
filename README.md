@@ -107,6 +107,24 @@ Abra `http://127.0.0.1:1420` em duas janelas anônimas separadas. No navegador, 
 | `TRUST_PROXY` | servidor | habilita confiança no primeiro proxy quando vale `1` |
 | `CORS_ORIGINS` | servidor | origens web adicionais, separadas por vírgula |
 | `MIN_PROTOCOL_VERSION` | servidor | menor versão do protocolo aceita pelo HTTP e WebSocket |
+| `MIN_APP_VERSION` | servidor | menor versão do app aceita; abaixo dela a pessoa vê a tela de atualização |
+| `CLOUDFLARE_TURN_KEY_ID` | servidor | chave do Cloudflare Realtime TURN; sem ela o servidor entrega só STUN |
+| `CLOUDFLARE_TURN_API_TOKEN` | servidor | token do Cloudflare Realtime TURN |
+| `CLOUDFLARE_TURN_TTL_SECONDS` | servidor | validade das credenciais TURN em segundos (padrão `3600`, máximo `86400`) |
+| `TURN_ENABLED` | servidor | ligado por padrão; `0`, `false`, `off` ou `no` desligam o relay e entregam só STUN |
+| `TURN_MAX_BITRATE_KBPS` | servidor | teto de vídeo em kbps quando a rota é relay; vazio significa sem limite |
+
+O Cloudflare TURN é cobrado por GB depois da franquia mensal gratuita, e `TURN_ENABLED` e
+`TURN_MAX_BITRATE_KBPS` existem para conter esse custo sem mexer em código. Elas são lidas a cada
+requisição, então basta alterar as variáveis do serviço no Render — não é no GitHub nem no app.
+
+Três ressalvas antes de mexer:
+
+- Salvar no Render faz redeploy, e as salas só existem na memória do servidor: todo mundo cai. Altere
+  com a sala vazia.
+- `TURN_ENABLED=0` vale para quem entra ou renova a conexão depois; quem já está em relay segue até a
+  conexão fechar ou a credencial expirar.
+- O teto de bitrate só chega a quem entra de novo usando uma versão do app que já o aplica.
 
 Nunca versione arquivos `.env` com credenciais. O `.env.production` do repositório contém apenas a URL pública usada no build oficial.
 

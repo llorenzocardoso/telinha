@@ -290,6 +290,7 @@ export function useTelinhaRoom(
         cameraStreamRef.current?.getTracks().includes(track)
           ? CAMERA_MAX_BITRATE
           : shareBitrateRef.current,
+      getRelayCapKbps: () => session.turnMaxBitrateKbps,
       preferH264: () => preferH264Ref.current,
       send: sendSignal,
       onRemoteStream: (peerId, stream) => {

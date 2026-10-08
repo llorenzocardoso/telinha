@@ -21,6 +21,7 @@ import {
   readProtocolVersion,
 } from "./protocol.js";
 import { renderInvitePage } from "./invitePage.js";
+import { createRuntimeConfig, type FlagSource } from "./runtimeConfig.js";
 import { createIceServerProvider, type TurnProviderOptions } from "./turn.js";
 
 const SEAT_TTL_MS = 2 * 60 * 1000;
@@ -94,6 +95,8 @@ export interface TelinhaServerOptions {
   maxRateBuckets?: number;
   authenticationTimeoutMs?: number;
   turn?: TurnProviderOptions;
+  /** Fonte das flags de runtime; sem ela, lê do ambiente do processo. */
+  flags?: FlagSource;
 }
 
 export interface TelinhaServer {
@@ -165,7 +168,11 @@ export function createTelinhaServer(options: TelinhaServerOptions = {}): Telinha
   const cleanupIntervalMs = options.cleanupIntervalMs ?? 5_000;
   const minProtocolVersion = options.minProtocolVersion ?? CURRENT_PROTOCOL_VERSION;
   const minAppVersion = options.minAppVersion?.trim() || "0.2.0";
-  const iceServers = createIceServerProvider(options.turn);
+  const runtime = createRuntimeConfig(options.flags ?? (() => process.env));
+  const iceServers = createIceServerProvider({
+    ...options.turn,
+    isEnabled: () => runtime.read().turnEnabled,
+  });
   const maxRateBuckets = Math.max(1, options.maxRateBuckets ?? MAX_RATE_BUCKETS);
   const authenticationTimeoutMs =
     options.authenticationTimeoutMs ?? AUTHENTICATION_TIMEOUT_MS;
@@ -351,6 +358,7 @@ export function createTelinhaServer(options: TelinhaServerOptions = {}): Telinha
       protocolVersion: CURRENT_PROTOCOL_VERSION,
       wsAuthMode: "message" as const,
       features: SERVER_FEATURES,
+      turnMaxBitrateKbps: runtime.read().turnMaxBitrateKbps,
       iceServers: await iceServers.getIceServers(),
     };
   }
@@ -448,7 +456,13 @@ export function createTelinhaServer(options: TelinhaServerOptions = {}): Telinha
   });
 
   app.get("/app-config", (_req, res) => {
-    res.json({ minAppVersion, minProtocolVersion });
+    const flags = runtime.read();
+    res.json({
+      minAppVersion,
+      minProtocolVersion,
+      turnEnabled: flags.turnEnabled,
+      turnMaxBitrateKbps: flags.turnMaxBitrateKbps,
+    });
   });
 
   app.post("/rooms", requireProtocol, rateLimited(createHits, CREATE_LIMIT), async (req, res) => {

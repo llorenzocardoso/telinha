@@ -14,8 +14,16 @@ interface RoomSession {
   wsAuthMode?: "message" | "query";
 }
 
-async function listen(publicWsUrl?: string): Promise<{ server: TelinhaServer; base: string }> {
-  const server = createTelinhaServer({ disableRateLimit: true, publicWsUrl });
+/** Valor arbitrário: o teste só confere que o servidor devolve o que recebeu. */
+const MIN_APP_VERSION_FIXTURE = "9.9.9";
+
+type ListenOptions = Parameters<typeof createTelinhaServer>[0];
+
+async function listen(
+  options?: string | ListenOptions,
+): Promise<{ server: TelinhaServer; base: string }> {
+  const extra: ListenOptions = typeof options === "string" ? { publicWsUrl: options } : options ?? {};
+  const server = createTelinhaServer({ disableRateLimit: true, ...extra });
   await new Promise<void>((resolve) => {
     server.http.listen(0, "127.0.0.1", resolve);
   });
@@ -573,15 +581,46 @@ describe("telinha server", () => {
     late.close();
   });
 
-  it("publica a versão mínima do app", async () => {
-    const server = createTelinhaServer({ disableRateLimit: true, minAppVersion: "0.3.0" });
+  it("publica a versão mínima do app e as flags do TURN", async () => {
+    const server = createTelinhaServer({
+      disableRateLimit: true,
+      minAppVersion: MIN_APP_VERSION_FIXTURE,
+      flags: () => ({}),
+    });
     running = server;
     await new Promise<void>((resolve) => {
       server.http.listen(0, "127.0.0.1", resolve);
     });
     const address = server.http.address() as AddressInfo;
     const response = await fetch(`http://127.0.0.1:${address.port}/app-config`);
-    await expect(response.json()).resolves.toEqual({ minAppVersion: "0.3.0", minProtocolVersion: 2 });
+    await expect(response.json()).resolves.toEqual({
+      minAppVersion: MIN_APP_VERSION_FIXTURE,
+      minProtocolVersion: 2,
+      turnEnabled: true,
+      turnMaxBitrateKbps: null,
+    });
+  });
+
+  it("reflete as flags do TURN em /app-config e na sessão a cada leitura", async () => {
+    const flags: { TURN_ENABLED?: string; TURN_MAX_BITRATE_KBPS?: string } = {};
+    const { server, base } = await listen({ flags: () => flags });
+    running = server;
+
+    const open = await postJson(`${base}/rooms`, { displayName: "Ana" });
+    expect(open.data.turnMaxBitrateKbps).toBeNull();
+
+    flags.TURN_ENABLED = "0";
+    flags.TURN_MAX_BITRATE_KBPS = "900";
+
+    const config = await fetch(`${base}/app-config`);
+    await expect(config.json()).resolves.toMatchObject({
+      turnEnabled: false,
+      turnMaxBitrateKbps: 900,
+    });
+
+    // Sem reiniciar: a sessão seguinte já sai com o teto novo.
+    const later = await postJson(`${base}/rooms`, { displayName: "Bia" });
+    expect(later.data.turnMaxBitrateKbps).toBe(900);
   });
 
   it("entrega os iceServers da sessão e renova com o token do participante", async () => {

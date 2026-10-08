@@ -19,3 +19,8 @@ services:
         sync: false
       - key: CLOUDFLARE_TURN_API_TOKEN
         sync: false
+      # Sem "value": o Blueprint não deve sobrescrever o que estiver no painel.
+      - key: TURN_ENABLED
+        sync: false
+      - key: TURN_MAX_BITRATE_KBPS
+        sync: false
