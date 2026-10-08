@@ -175,7 +175,7 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
             <strong>Áudio do sistema</strong>
             <span>
               {nativeRuntime
-                ? "Inclui o som da tela; o áudio do Discord continua de fora"
+                ? "Inclui o som do computador; o Discord fica de fora quando está aberto"
                 : "Inclui áudio quando a fonte escolhida permitir"}
             </span>
           </div>
