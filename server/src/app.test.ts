@@ -136,6 +136,20 @@ describe("telinha server", () => {
     expect(joined.data.token).not.toBe(created.data.token);
   });
 
+  it("serve a página de convite para um código válido e 404 para inválido", async () => {
+    const { server, base } = await listen();
+    running = server;
+
+    const valid = await fetch(`${base}/j/ab-23-cd`);
+    expect(valid.status).toBe(200);
+    expect(valid.headers.get("content-type")).toContain("text/html");
+    expect(await valid.text()).toContain('href="telinha://join/AB23CD"');
+
+    const invalid = await fetch(`${base}/j/AB12CD`);
+    expect(invalid.status).toBe(404);
+    expect(await invalid.text()).not.toContain("telinha://join");
+  });
+
   it("rejeita código personalizado na criação", async () => {
     const { server, base } = await listen();
     running = server;

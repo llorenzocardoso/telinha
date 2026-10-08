@@ -182,6 +182,10 @@ npm start
 
 Em produção, configure `WS_PUBLIC_URL`, `MIN_PROTOCOL_VERSION` e `TRUST_PROXY` de acordo com a infraestrutura. Para redes restritivas, forneça também um TURN próprio no build do aplicativo.
 
+## Documentação técnica
+
+A referência completa para desenvolvimento e operação está em [`docs/`](docs/README.md): arquitetura, protocolo de sinalização, servidor, cliente, shell desktop, guia de desenvolvimento, operação/releases e segurança.
+
 ## Contribuindo
 
 Issues e pull requests são bem-vindos. Antes de enviar uma alteração:

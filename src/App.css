@@ -1104,6 +1104,17 @@ button:focus-visible {
   color: #b5bac1;
 }
 
+.room-toast.copied,
+.room-toast.copy-failed {
+  align-self: flex-end;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.room-toast.copy-failed {
+  color: #f0d48a;
+}
+
 .reconnect-banner {
   width: 100%;
   text-align: center;

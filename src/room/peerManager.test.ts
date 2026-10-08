@@ -9,10 +9,12 @@ class MockPeerConnection {
   onicecandidate: RTCPeerConnection["onicecandidate"] = null;
   ontrack: RTCPeerConnection["ontrack"] = null;
   onconnectionstatechange: RTCPeerConnection["onconnectionstatechange"] = null;
-  senders: { track: MediaStreamTrack; getParameters: () => RTCRtpSendParameters; setParameters: () => Promise<void> }[] = [];
+  senders: { track: MediaStreamTrack | null; getParameters: () => RTCRtpSendParameters; setParameters: () => Promise<void> }[] = [];
   localDescriptions: RTCSessionDescriptionInit[] = [];
   stats = new Map<string, Record<string, unknown>>();
   closed = 0;
+
+  offerGate: Promise<void> | null = null;
 
   addTrack(track: MediaStreamTrack) {
     const sender = {
@@ -37,6 +39,7 @@ class MockPeerConnection {
   }
 
   async createOffer() {
+    await this.offerGate;
     return { type: "offer" as const, sdp: "v=0 offer" };
   }
 
@@ -57,8 +60,8 @@ class MockPeerConnection {
   }
 
   async addIceCandidate() {}
-  removeTrack(sender: RTCRtpSender) {
-    this.senders = this.senders.filter((item) => (item as unknown as RTCRtpSender) !== sender);
+  removeTrack(sender: { track: MediaStreamTrack | null }) {
+    sender.track = null;
   }
   close() {
     this.closed += 1;
@@ -98,18 +101,19 @@ describe("PeerManager", () => {
   });
 
   function manager(
-    getLocalStream: () => MediaStream | null,
+    getShareStream: () => MediaStream | null,
     localId = "user-z",
     onMediaStatus = vi.fn(),
     configuration: RTCConfiguration = {},
+    shouldSendTo: (peerId: string) => boolean = () => true,
+    getCameraStream: () => MediaStream | null = () => null,
   ) {
     return new PeerManager({
       localId,
       configuration,
-      getLocalStreams: () => {
-        const stream = getLocalStream();
-        return stream ? [stream] : [];
-      },
+      getShareStream,
+      getCameraStream,
+      shouldSendTo,
       getVideoBitrate: () => 10_000_000,
       preferH264: () => true,
       send: vi.fn(),
@@ -132,40 +136,168 @@ describe("PeerManager", () => {
     expect(created[0]!.senders.map((sender) => sender.track)).toEqual([track]);
   });
 
-  it("envia tela e câmera juntas e remove só as tracks pedidas", async () => {
-    const screen = { kind: "video" } as MediaStreamTrack;
-    const camera = { kind: "video" } as MediaStreamTrack;
-    const peers = new PeerManager({
-      localId: "user-z",
-      configuration: {},
-      getLocalStreams: () => [
-        { getTracks: () => [screen] } as MediaStream,
-        { getTracks: () => [camera] } as MediaStream,
-      ],
-      getVideoBitrate: () => 10_000_000,
-      preferH264: () => true,
-      send: vi.fn(),
-      onRemoteStream: vi.fn(),
-      onConnectionState: vi.fn(),
-      onMediaStatus: vi.fn(),
-      onError: vi.fn(),
-    });
-    await peers.offer("user-a");
-    expect(created[0]!.senders.map((sender) => sender.track)).toEqual([screen, camera]);
+  it("só envia tracks locais a peers que shouldSendTo aceita", async () => {
+    const track = { kind: "video" } as MediaStreamTrack;
+    const stream = { getTracks: () => [track] } as MediaStream;
+    const allowed = new Set(["user-a"]);
+    const peers = manager(() => stream, "user-z", vi.fn(), {}, (peerId) => allowed.has(peerId));
 
-    peers.removeLocalTracks([camera]);
-    expect(created[0]!.senders.map((sender) => sender.track)).toEqual([screen]);
+    await peers.offer("user-b");
+    expect(created[0]!.senders).toHaveLength(0);
+
+    await peers.offer("user-a");
+    expect(created[1]!.senders.map((sender) => sender.track)).toEqual([track]);
   });
 
-  it("segura o segundo offer até o answer do primeiro chegar", async () => {
-    const peers = manager(() => null);
-    await peers.offer("user-a");
-    await peers.offer("user-a");
-    const connection = created[0]!;
-    expect(connection.localDescriptions.map((item) => item.type)).toEqual(["offer"]);
+  it("não envia tracks locais em conexão criada por offer de peer fora da audiência", async () => {
+    const track = { kind: "video" } as MediaStreamTrack;
+    const stream = { getTracks: () => [track] } as MediaStream;
+    const peers = manager(() => stream, "user-z", vi.fn(), {}, () => false);
 
-    await peers.handleDescription("user-a", "answer", "v=0 answer");
-    expect(connection.localDescriptions.map((item) => item.type)).toEqual(["offer", "offer"]);
+    await peers.handleDescription("user-a", "offer", "v=0 remote");
+    expect(created[0]!.senders).toHaveLength(0);
+    expect(created[0]!.localDescriptions.map((item) => item.type)).toEqual(["answer"]);
+  });
+
+  it("não envia tracks locais em conexão criada por ice de peer fora da audiência", async () => {
+    const track = { kind: "video" } as MediaStreamTrack;
+    const stream = { getTracks: () => [track] } as MediaStream;
+    const peers = manager(() => stream, "user-z", vi.fn(), {}, () => false);
+
+    await peers.handleIce("user-a", { candidate: "candidate:1" });
+    expect(created[0]!.senders).toHaveLength(0);
+  });
+
+  it("envia a câmera mesmo a quem não pediu para assistir", async () => {
+    const cameraTrack = { kind: "video" } as MediaStreamTrack;
+    const camera = { getTracks: () => [cameraTrack] } as MediaStream;
+    const screenTrack = { kind: "video" } as MediaStreamTrack;
+    const screen = { getTracks: () => [screenTrack] } as MediaStream;
+    const peers = manager(() => screen, "user-z", vi.fn(), {}, () => false, () => camera);
+
+    await peers.offer("user-a");
+
+    // A tela fica de fora porque shouldSendTo recusou; a câmera vai de todo jeito.
+    expect(created[0]!.senders.map((sender) => sender.track)).toEqual([cameraTrack]);
+  });
+
+  it("lista os peers abertos e esquece o peer fechado", async () => {
+    const peers = manager(() => null);
+    expect(peers.peerIds()).toEqual([]);
+    await peers.handleIce("user-a", { candidate: "candidate:1" });
+    await peers.handleIce("user-b", { candidate: "candidate:1" });
+    expect(peers.peerIds()).toEqual(["user-a", "user-b"]);
+    peers.close("user-a");
+    expect(peers.peerIds()).toEqual(["user-b"]);
+  });
+
+  describe("stopSending", () => {
+    const track = { kind: "video" } as MediaStreamTrack;
+    const stream = { getTracks: () => [track] } as MediaStream;
+    const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+    const sentTracks = (connection: MockPeerConnection) =>
+      connection.senders.filter((sender) => sender.track).map((sender) => sender.track);
+
+    it("remove as faixas só da conexão alvo e renegocia", async () => {
+      const send = vi.fn();
+      const peers = new PeerManager({
+        localId: "user-z",
+        configuration: {},
+        getShareStream: () => stream,
+        getCameraStream: () => null,
+        shouldSendTo: () => true,
+        getVideoBitrate: () => 10_000_000,
+        preferH264: () => true,
+        send,
+        onRemoteStream: vi.fn(),
+        onConnectionState: vi.fn(),
+        onMediaStatus: vi.fn(),
+        onError: vi.fn(),
+      });
+      await peers.offer("user-a");
+      await peers.offer("user-b");
+      await peers.handleDescription("user-a", "answer", "v=0 answer");
+      await peers.handleDescription("user-b", "answer", "v=0 answer");
+      send.mockClear();
+
+      await peers.stopSending("user-a");
+
+      expect(sentTracks(created[0]!)).toEqual([]);
+      expect(sentTracks(created[1]!)).toEqual([track]);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(send).toHaveBeenCalledWith({ type: "offer", to: "user-a", sdp: "v=0 offer" });
+      expect(created[0]!.localDescriptions.map((item) => item.type)).toEqual(["offer", "offer"]);
+    });
+
+    it("não faz nada para peer inexistente", async () => {
+      const peers = manager(() => stream);
+      await expect(peers.stopSending("user-a")).resolves.toBeUndefined();
+      expect(created).toHaveLength(0);
+    });
+
+    it("mantém a faixa da câmera de quem parou de assistir a tela", async () => {
+      const cameraTrack = { kind: "video" } as MediaStreamTrack;
+      const camera = { getTracks: () => [cameraTrack] } as MediaStream;
+      const peers = manager(() => stream, "user-z", vi.fn(), {}, () => true, () => camera);
+      await peers.offer("user-a");
+      await peers.handleDescription("user-a", "answer", "v=0 answer");
+      expect(sentTracks(created[0]!)).toEqual([track, cameraTrack]);
+
+      await peers.stopSending("user-a");
+
+      expect(sentTracks(created[0]!)).toEqual([cameraTrack]);
+    });
+
+    it("executa offer e stopSending em série, sem deixar faixas enviadas", async () => {
+      let allowed = true;
+      const peers = manager(() => stream, "user-z", vi.fn(), {}, () => allowed);
+      await peers.handleIce("user-a", { candidate: "candidate:1" });
+      const connection = created[0]!;
+      let release!: () => void;
+      connection.offerGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+
+      const offering = peers.offer("user-a");
+      await tick();
+      expect(sentTracks(connection)).toEqual([track]);
+      allowed = false;
+      const stopping = peers.stopSending("user-a");
+      release();
+      await Promise.all([offering, stopping]);
+      await peers.handleDescription("user-a", "answer", "v=0 answer");
+
+      await vi.waitFor(() => {
+        expect(connection.localDescriptions.map((item) => item.type)).toEqual(["offer", "offer"]);
+      });
+      expect(sentTracks(connection)).toEqual([]);
+    });
+
+    it("renegocia depois da resposta quando a colisão impediu a oferta imediata", async () => {
+      let allowed = true;
+      const peers = manager(() => stream, "user-a", vi.fn(), {}, () => allowed);
+      await peers.handleIce("user-z", { candidate: "candidate:1" });
+      const connection = created[0]!;
+      let release!: () => void;
+      connection.offerGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+
+      const offering = peers.offer("user-z");
+      await tick();
+      await peers.handleDescription("user-z", "offer", "v=0 remote");
+      allowed = false;
+      const stopping = peers.stopSending("user-z");
+      release();
+      await Promise.all([offering, stopping]);
+      expect(connection.signalingState).toBe("have-local-offer");
+
+      await peers.handleDescription("user-z", "answer", "v=0 answer");
+      await vi.waitFor(() => {
+        expect(connection.localDescriptions.map((item) => item.type)).toEqual(["offer", "offer"]);
+      });
+      expect(sentTracks(connection)).toEqual([]);
+    });
   });
 
   it("faz rollback no lado polite durante colisão de offers", async () => {

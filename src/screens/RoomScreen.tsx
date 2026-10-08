@@ -3,6 +3,7 @@ import { PhoneOff, Settings, Video, VideoOff } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import type { RoomSession } from "../lib/api";
+import { inviteLink } from "../lib/trayLive";
 import {
   ConnectionState,
   useTelinhaRoom,
@@ -32,13 +33,15 @@ interface RoomScreenProps {
   onSharingChange?: (sharing: boolean) => void;
   openPicker?: boolean;
   onPickerOpened?: () => void;
+  trayStartRequest?: boolean;
+  onTrayStartHandled?: () => void;
 }
 
 const VOLUMES_KEY = "telinha-watch-volumes";
 
 interface RoomToast {
   id: number;
-  kind: "live" | "ended";
+  kind: "live" | "ended" | "copied" | "copy-failed";
   name: string;
   shareId?: string;
 }
@@ -51,6 +54,8 @@ export function RoomScreen({
   onSharingChange,
   openPicker,
   onPickerOpened,
+  trayStartRequest,
+  onTrayStartHandled,
 }: RoomScreenProps) {
   const [copied, setCopied] = useState(false);
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
@@ -73,6 +78,9 @@ export function RoomScreen({
   const knownLives = useRef<Map<string, string>>(new Map());
   const toastSeq = useRef(0);
   const hideTimer = useRef<number | null>(null);
+  const codeRef = useRef(session.code);
+  const isSharingRef = useRef(false);
+  const stopShareRef = useRef<() => Promise<void>>(async () => undefined);
   const {
     connectionState,
     isSharing,
@@ -120,6 +128,20 @@ export function RoomScreen({
   const remoteShareKey = remoteShares
     .map((share) => `${share.participantIdentity}\t${share.participantName}`)
     .join("\0");
+
+  useEffect(() => {
+    codeRef.current = session.code;
+    isSharingRef.current = isSharing;
+    stopShareRef.current = stopShare;
+  });
+
+  useEffect(() => {
+    if (trayStartRequest) {
+      onTrayStartHandled?.();
+      if (isSharingRef.current) return;
+      setPickerOpen(true);
+    }
+  }, [trayStartRequest, onTrayStartHandled]);
 
   useEffect(() => {
     if (openPicker) {
@@ -319,6 +341,64 @@ export function RoomScreen({
     };
   }, [isSharing, stopShare]);
 
+  function pushToast(kind: RoomToast["kind"], message: string) {
+    toastSeq.current += 1;
+    const idn = toastSeq.current;
+    setToasts((current) => [...current, { id: idn, kind, name: message }]);
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== idn));
+    }, 3000);
+  }
+
+  async function copyToClipboard(text: string): Promise<boolean> {
+    try {
+      await invoke("copy_to_clipboard", { text });
+      return true;
+    } catch {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  async function copyWithToast(text: string, successMessage: string) {
+    const ok = await copyToClipboard(text);
+    pushToast(ok ? "copied" : "copy-failed", ok ? successMessage : "Não foi possível copiar");
+  }
+
+  const copyWithToastRef = useRef(copyWithToast);
+  copyWithToastRef.current = copyWithToast;
+
+  useEffect(() => {
+    let cancelled = false;
+    const unlisteners: Array<() => void> = [];
+    const handlers: Array<[string, () => void]> = [
+      ["tray-copy-link", () => void copyWithToastRef.current(inviteLink(codeRef.current), "Link de compartilhamento copiado")],
+      ["tray-copy-code", () => void copyWithToastRef.current(codeRef.current, "Código copiado")],
+      [
+        "tray-stop-live",
+        () => {
+          if (isSharingRef.current) void stopShareRef.current();
+        },
+      ],
+    ];
+    for (const [event, handler] of handlers) {
+      listen(event, handler)
+        .then((fn) => {
+          if (cancelled) fn();
+          else unlisteners.push(fn);
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      cancelled = true;
+      unlisteners.forEach((fn) => fn());
+    };
+  }, []);
+
   async function copyCode() {
     try {
       await invoke("copy_to_clipboard", { text: session.code });
@@ -418,6 +498,7 @@ export function RoomScreen({
         onCancel={() => setPickerOpen(false)}
         onShare={async (sourceId, quality) => {
           await startShare(sourceId, quality);
+          await copyWithToast(inviteLink(session.code), "Link de compartilhamento copiado");
           setPickerOpen(false);
         }}
       />
@@ -429,13 +510,16 @@ export function RoomScreen({
       <div
         className={`screen room-screen watching ${watchFullscreen ? "watching-full" : "watching-window"} ${multiWatch ? "watching-mosaic" : ""} ${chromeVisible ? "chrome-on" : "chrome-off"}`}
       >
-        {watchingShares.map((share) => (
-          <WatchAudio
-            key={share.participantIdentity}
-            stream={share.stream}
-            volume={shareVolume(share)}
-          />
-        ))}
+        {watchingShares.map(
+          (share) =>
+            share.stream && (
+              <WatchAudio
+                key={share.participantIdentity}
+                stream={share.stream}
+                volume={shareVolume(share)}
+              />
+            ),
+        )}
         <header className="watch-chrome top">
           <div className="watch-heading">
             <div className="watch-live-title">
@@ -466,7 +550,13 @@ export function RoomScreen({
         >
           {watchingShares.map((share) => (
             <div key={share.participantIdentity} className="watch-pane">
-              <VideoTile stream={share.stream} active />
+              {share.stream ? (
+                <VideoTile stream={share.stream} active />
+              ) : (
+                <div className="video-placeholder">
+                  <p>Conectando…</p>
+                </div>
+              )}
               {multiWatch && <span className="watch-pane-name">{share.participantName}</span>}
               {multiWatch && (
                 <div className="watch-pane-actions">
@@ -580,7 +670,7 @@ export function RoomScreen({
         </header>
 
         <div className="host-preview">
-          {localShare ? (
+          {localShare?.stream ? (
             <>
               <VideoTile stream={localShare.stream} active />
               <span className="host-preview-label">Prévia da sua transmissão</span>
@@ -859,7 +949,11 @@ function ToastStack({
       {toasts.map((toast) => (
         <div key={toast.id} className={`room-toast ${toast.kind}`}>
           <span>
-            {toast.kind === "live" ? `${toast.name} começou a transmitir` : `${toast.name} encerrou`}
+            {toast.kind === "live"
+              ? `${toast.name} começou a transmitir`
+              : toast.kind === "ended"
+                ? `${toast.name} encerrou`
+                : toast.name}
           </span>
           {toast.kind === "live" && toast.shareId && (
             <button type="button" className="btn btn-primary" onClick={() => onWatch(toast.shareId!)}>

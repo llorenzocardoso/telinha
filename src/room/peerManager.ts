@@ -2,7 +2,6 @@ import type { ClientSignal } from "../lib/protocol";
 import type { PeerHealthSample } from "./connectionQuality";
 
 const AUDIO_MAX_BITRATE = 320_000;
-const OFFER_ANSWER_TIMEOUT_MS = 5_000;
 
 interface PeerEntry {
   connection: RTCPeerConnection;
@@ -10,9 +9,9 @@ interface PeerEntry {
   makingOffer: boolean;
   ignoreOffer: boolean;
   settingRemoteAnswer: boolean;
+  queue: Promise<void>;
+  renegotiateOnStable: boolean;
   iceRestarted: boolean;
-  offerSentAt: number;
-  pendingOffer?: { iceRestart: boolean };
   remoteVideoAt?: number;
   mediaRecoveryAt?: number;
   mediaFailureReported: boolean;
@@ -34,7 +33,11 @@ export type MediaDeliveryStatus =
 interface PeerManagerOptions {
   localId: string;
   configuration: RTCConfiguration;
-  getLocalStreams: () => MediaStream[];
+  /** A tela compartilhada, quando há uma. Só vai para quem pediu para assistir. */
+  getShareStream: () => MediaStream | null;
+  /** A câmera, quando ligada. Vai para todo mundo na sala, independente de audiência. */
+  getCameraStream: () => MediaStream | null;
+  shouldSendTo: (peerId: string) => boolean;
   getVideoBitrate: (track: MediaStreamTrack) => number;
   preferH264: () => boolean;
   send: (message: ClientSignal) => void;
@@ -60,22 +63,51 @@ export class PeerManager {
     this.configuration = options.configuration;
   }
 
-  async offer(peerId: string, iceRestart = false): Promise<void> {
+  offer(peerId: string, iceRestart = false): Promise<void> {
     const entry = this.ensure(peerId);
-    this.syncLocalTracks(entry.connection, entry.forceVp8);
-    // Um offer por vez: outro offer antes do answer deixaria as duas pontas com descrições diferentes.
-    const awaitingAnswer =
-      entry.connection.signalingState === "have-local-offer" &&
-      Date.now() - entry.offerSentAt < OFFER_ANSWER_TIMEOUT_MS;
-    if (entry.makingOffer || awaitingAnswer) {
-      entry.pendingOffer = { iceRestart: iceRestart || Boolean(entry.pendingOffer?.iceRestart) };
-      return;
-    }
+    return this.enqueue(entry, async () => {
+      this.syncLocalTracks(peerId, entry.connection, entry.forceVp8);
+      await this.negotiate(peerId, entry, iceRestart);
+    });
+  }
+
+  async stopSending(peerId: string): Promise<void> {
+    const entry = this.peers.get(peerId);
+    if (!entry) return;
+    await this.enqueue(entry, async () => {
+      const { connection } = entry;
+      // Quem para de assistir deixa de receber a tela, mas a câmera continua indo para a sala.
+      const shareTracks = new Set(this.options.getShareStream()?.getTracks() ?? []);
+      let removed = false;
+      for (const sender of connection.getSenders()) {
+        if (!sender.track || !shareTracks.has(sender.track)) continue;
+        try {
+          connection.removeTrack(sender);
+          removed = true;
+        } catch {
+          // A conexão pode fechar entre getSenders e removeTrack.
+        }
+      }
+      if (!removed) return;
+      if (connection.signalingState === "stable") {
+        await this.negotiate(peerId, entry, false);
+      } else {
+        entry.renegotiateOnStable = true;
+      }
+    });
+  }
+
+  private enqueue(entry: PeerEntry, task: () => Promise<void>): Promise<void> {
+    const run = entry.queue.then(task);
+    entry.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async negotiate(peerId: string, entry: PeerEntry, iceRestart: boolean): Promise<void> {
     entry.makingOffer = true;
     try {
       const offer = await entry.connection.createOffer({ iceRestart });
       await entry.connection.setLocalDescription(offer);
-      entry.offerSentAt = Date.now();
       if (offer.sdp) this.options.send({ type: "offer", to: peerId, sdp: offer.sdp });
       await this.applyBitrate(entry);
     } finally {
@@ -104,16 +136,17 @@ export class PeerManager {
     for (const receiver of peer.getReceivers()) markVideoMotion(receiver.track);
 
     if (type === "offer") {
-      this.syncLocalTracks(peer, entry.forceVp8);
+      this.syncLocalTracks(peerId, peer, entry.forceVp8);
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
       if (answer.sdp) this.options.send({ type: "answer", to: peerId, sdp: answer.sdp });
-      // O rollback descartou o nosso offer; tracks que não couberam no answer precisam de outro.
-      if (offerCollision && hasUnsentTracks(peer)) entry.pendingOffer ??= { iceRestart: false };
     } else {
       await this.applyBitrate(entry);
+      if (entry.renegotiateOnStable && peer.signalingState === "stable") {
+        entry.renegotiateOnStable = false;
+        await this.enqueue(entry, () => this.negotiate(peerId, entry, false));
+      }
     }
-    await this.flushPendingOffer(peerId, entry);
   }
 
   async handleIce(peerId: string, candidate: RTCIceCandidateInit): Promise<void> {
@@ -135,10 +168,13 @@ export class PeerManager {
     }
   }
 
-  removeLocalTracks(tracks: MediaStreamTrack[]): void {
+  /** Sem argumento remove tudo; com uma lista remove só aquelas faixas (tela ou câmera). */
+  removeLocalTracks(tracks?: readonly MediaStreamTrack[]): void {
+    const wanted = tracks ? new Set(tracks) : null;
     for (const { connection } of this.peers.values()) {
       for (const sender of connection.getSenders()) {
-        if (!sender.track || !tracks.includes(sender.track)) continue;
+        if (!sender.track) continue;
+        if (wanted && !wanted.has(sender.track)) continue;
         try {
           connection.removeTrack(sender);
         } catch {
@@ -146,6 +182,10 @@ export class PeerManager {
         }
       }
     }
+  }
+
+  peerIds(): string[] {
+    return [...this.peers.keys()];
   }
 
   close(peerId: string): void {
@@ -216,8 +256,9 @@ export class PeerManager {
       makingOffer: false,
       ignoreOffer: false,
       settingRemoteAnswer: false,
+      queue: Promise.resolve(),
+      renegotiateOnStable: false,
       iceRestarted: false,
-      offerSentAt: 0,
       mediaFailureReported: false,
       forceVp8: false,
       localIceCandidates: 0,
@@ -264,14 +305,21 @@ export class PeerManager {
       const stream = event.streams[0] ?? new MediaStream([event.track]);
       this.options.onRemoteStream(peerId, stream);
     };
-    this.syncLocalTracks(connection, entry.forceVp8);
+    this.syncLocalTracks(peerId, connection, entry.forceVp8);
     return entry;
   }
 
-  private syncLocalTracks(peer: RTCPeerConnection, forceVp8: boolean): void {
-    for (const stream of this.options.getLocalStreams()) {
+  private syncLocalTracks(peerId: string, peer: RTCPeerConnection, forceVp8: boolean): void {
+    // A tela só vai para quem pediu para assistir; a câmera vai para a sala toda.
+    const share = this.options.shouldSendTo(peerId) ? this.options.getShareStream() : null;
+    const camera = this.options.getCameraStream();
+    if (!share && !camera) return;
+    for (const stream of [share, camera]) {
+      if (!stream) continue;
       for (const track of stream.getTracks()) {
-        if (!peer.getSenders().some((sender) => sender.track === track)) peer.addTrack(track, stream);
+        if (!peer.getSenders().some((sender) => sender.track === track)) {
+          peer.addTrack(track, stream);
+        }
       }
     }
     preferVideoCodecs(peer, forceVp8 ? false : this.options.preferH264());
@@ -290,13 +338,6 @@ export class PeerManager {
     } catch {
       this.options.onError("Não foi possível recuperar a conexão P2P.");
     }
-  }
-
-  private async flushPendingOffer(peerId: string, entry: PeerEntry): Promise<void> {
-    const pending = entry.pendingOffer;
-    if (!pending || entry.connection.signalingState !== "stable") return;
-    entry.pendingOffer = undefined;
-    await this.offer(peerId, pending.iceRestart);
   }
 
   private async flushIce(entry: PeerEntry): Promise<void> {
@@ -334,10 +375,6 @@ export class PeerManager {
 
   private readHealth(peerId: string, reports: RTCStatsReport): PeerHealthSample {
     const sample: PeerHealthSample = { peerId };
-    // Tela e câmera viram relatórios de vídeo separados na mesma conexão; os totais são somados.
-    let packetsReceived = 0;
-    let packetsLost = 0;
-    let outboundTimestamp = 0;
     reports.forEach((report) => {
       if (report.type === "candidate-pair" && report.state === "succeeded" && report.nominated) {
         if (typeof report.currentRoundTripTime === "number") {
@@ -354,33 +391,29 @@ export class PeerManager {
         if (candidate?.protocol) sample.transport = String(candidate.protocol);
       }
       if (report.type === "inbound-rtp" && report.kind === "video") {
-        sample.bytesReceived = (sample.bytesReceived ?? 0) + Number(report.bytesReceived ?? 0);
-        sample.framesDecoded = (sample.framesDecoded ?? 0) + Number(report.framesDecoded ?? 0);
-        packetsReceived += Number(report.packetsReceived ?? 0);
-        packetsLost += Number(report.packetsLost ?? 0);
+        sample.bytesReceived = Number(report.bytesReceived ?? 0);
+        sample.framesDecoded = Number(report.framesDecoded ?? 0);
+        const received = Number(report.packetsReceived ?? 0);
+        const lost = Number(report.packetsLost ?? 0);
+        if (received + lost > 0) sample.packetLossPercent = (lost / (received + lost)) * 100;
         if (typeof report.codecId === "string") {
           const codec = reports.get(report.codecId);
           if (codec?.mimeType) sample.codec = String(codec.mimeType);
         }
       }
       if (report.type === "outbound-rtp" && report.kind === "video") {
-        sample.bytesSent = (sample.bytesSent ?? 0) + Number(report.bytesSent ?? 0);
-        outboundTimestamp = Math.max(outboundTimestamp, Number(report.timestamp ?? 0));
+        const bytes = Number(report.bytesSent ?? 0);
+        sample.bytesSent = bytes;
+        const timestamp = Number(report.timestamp ?? 0);
+        const previous = this.previousBytes.get(peerId);
+        if (previous && timestamp > previous.timestamp) {
+          sample.bitrateKbps = Math.round(
+            ((bytes - previous.bytes) * 8) / (timestamp - previous.timestamp),
+          );
+        }
+        this.previousBytes.set(peerId, { bytes, timestamp });
       }
     });
-    if (packetsReceived + packetsLost > 0) {
-      sample.packetLossPercent = (packetsLost / (packetsReceived + packetsLost)) * 100;
-    }
-    if (sample.bytesSent !== undefined) {
-      const bytes = sample.bytesSent;
-      const previous = this.previousBytes.get(peerId);
-      if (previous && outboundTimestamp > previous.timestamp && bytes >= previous.bytes) {
-        sample.bitrateKbps = Math.round(
-          ((bytes - previous.bytes) * 8) / (outboundTimestamp - previous.timestamp),
-        );
-      }
-      this.previousBytes.set(peerId, { bytes, timestamp: outboundTimestamp });
-    }
     return sample;
   }
 
@@ -422,13 +455,6 @@ export class PeerManager {
     entry.lastMediaStatus = status;
     this.options.onMediaStatus(peerId, status);
   }
-}
-
-function hasUnsentTracks(peer: RTCPeerConnection): boolean {
-  return peer.getTransceivers().some((transceiver) => {
-    const direction = transceiver.currentDirection;
-    return Boolean(transceiver.sender.track) && direction !== "sendrecv" && direction !== "sendonly";
-  });
 }
 
 function hasRelayServer(configuration: RTCConfiguration): boolean {
