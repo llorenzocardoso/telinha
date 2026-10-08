@@ -1,0 +1,108 @@
+/*
+ * Telinha — sistema visual "Mono suave" (0.4.0).
+ *
+ * Um único tema escuro. As camadas de cinza vão do fundo para cima:
+ * bg -> surface-1 -> surface-2/3 -> surface-4. Cor só aparece com significado:
+ * vermelho é "ao vivo" ou "sair", e nada mais.
+ */
+
+@font-face {
+  font-family: "Geist";
+  src: url("../assets/fonts/geist-variable.woff2") format("woff2-variations");
+  font-weight: 400 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../assets/fonts/jetbrains-mono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../assets/fonts/jetbrains-mono-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+
+  /* Superfícies */
+  --bg: #0b0b0c;
+  --surface-1: #151517;
+  --surface-2: #1a1a1d;
+  --surface-3: #1e1e21;
+  --surface-4: #2c2c30;
+  --line: #3a3a3f;
+
+  /* Texto */
+  --text: #f5f5f5;
+  --text-2: #c7c7cc;
+  --muted: #8e8e93;
+  --faint: #6e6e73;
+
+  /* Sinal: só "ao vivo" e "sair" */
+  --live: #ff5148;
+  --live-bg: #2a1615;
+
+  /* O botão primário é claro, então o que vai sobre ele é escuro. */
+  --primary: var(--text);
+  --on-primary: #0b0b0c;
+
+  /* Tipografia */
+  --font-sans: "Geist", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --text-xl: 20px;
+  --text-lg: 18px;
+  --text-md: 14px;
+  --text-sm: 13px;
+  --text-xs: 12px;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* Espaço */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* Forma */
+  --radius-sm: 5px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+
+  /* Altura de controle; 44px nas ações principais */
+  --control-sm: 36px;
+  --control-md: 40px;
+  --control-lg: 44px;
+
+  /* Sombra só no diálogo e na dock flutuante */
+  --shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.56);
+  --shadow-dock: 0 12px 32px rgba(0, 0, 0, 0.44);
+}
+
+:root {
+  /* Fiapos e camadas translúcidas usadas pelas telas atuais */
+  --hairline: rgba(245, 245, 245, 0.1);
+  --hairline-soft: rgba(245, 245, 245, 0.05);
+  --tonal: rgba(245, 245, 245, 0.08);
+  --tonal-strong: rgba(245, 245, 245, 0.16);
+  --scrim: rgba(0, 0, 0, 0.62);
+  --scrim-strong: rgba(0, 0, 0, 0.72);
+  --overlay-1: rgba(26, 26, 29, 0.88);
+  --overlay-2: rgba(21, 21, 23, 0.92);
+  --focus-ring: rgba(245, 245, 245, 0.32);
+}

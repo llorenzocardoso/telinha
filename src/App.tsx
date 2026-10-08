@@ -16,6 +16,7 @@ import {
 } from "./lib/sessionStore";
 import { HomeScreen } from "./screens/HomeScreen";
 import { RoomScreen } from "./screens/RoomScreen";
+import "./styles/tokens.css";
 import "./App.css";
 
 const NAME_KEY = "telinha-display-name";
