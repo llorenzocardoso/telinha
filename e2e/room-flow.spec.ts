@@ -111,13 +111,13 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
   expect(code).toMatch(/^[A-Z0-9]{6}$/);
 
   await enterName(b, "Bia");
-  await b.getByRole("textbox", { name: "Código da sala" }).fill(code!);
-  await b.getByRole("button", { name: "Entrar" }).click();
+  await b.getByRole("textbox", { name: "Código ou link do convite" }).fill(code!);
+  await b.getByRole("button", { name: "Entrar na sala" }).click();
   await expect(a.getByText("Bia", { exact: false })).toBeVisible();
 
   await enterName(c, "Caio");
-  await c.getByRole("textbox", { name: "Código da sala" }).fill(code!);
-  await c.getByRole("button", { name: "Entrar" }).click();
+  await c.getByRole("textbox", { name: "Código ou link do convite" }).fill(code!);
+  await c.getByRole("button", { name: "Entrar na sala" }).click();
   await expect(a.getByText("Caio", { exact: false })).toBeVisible();
 
   await a.getByRole("button", { name: "Ligar câmera", exact: true }).click();
@@ -166,9 +166,9 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
   await expect(c.locator(".camera-tile")).toHaveCount(0);
 
   await b.getByRole("button", { name: "Sair", exact: true }).click();
-  await expect(b.getByRole("button", { name: "Entrar" })).toBeVisible();
-  await b.getByRole("textbox", { name: "Código da sala" }).fill(code!);
-  await b.getByRole("button", { name: "Entrar" }).click();
+  await expect(b.getByRole("button", { name: "Entrar na sala" })).toBeVisible();
+  await b.getByRole("textbox", { name: "Código ou link do convite" }).fill(code!);
+  await b.getByRole("button", { name: "Entrar na sala" }).click();
   await expect(a.locator(".person-chip", { hasText: "Bia" })).toHaveCount(1);
   await expect(a.locator(".person-chip", { hasText: "Bia · reconectando" })).toHaveCount(0);
 
