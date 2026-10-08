@@ -72,7 +72,7 @@ test("bandwidth: upload da transmissora", async ({ browser }) => {
   const [ana, ...others] = pages;
   await enterName(ana!, names[0]!);
   await ana!.getByRole("button", { name: "Criar sala" }).click();
-  const code = (await ana!.locator(".lobby-code strong").textContent())?.trim();
+  const code = (await ana!.getByTestId("room-code").textContent())?.trim();
   expect(code).toMatch(/^[A-Z0-9]{6}$/);
 
   for (const [i, page] of others.entries()) await joinRoom(page, code!, names[i + 1]!, ana!);
@@ -80,7 +80,7 @@ test("bandwidth: upload da transmissora", async ({ browser }) => {
   await startSyntheticShare(ana!);
 
   for (const page of others.slice(0, VIEWERS)) {
-    await page.locator(".live-choice", { hasText: "Ana" }).click();
+    await page.getByTestId("participant").filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" }).click();
     const video = page.locator("video").first();
     await expect(video).toBeVisible();
     await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.currentTime)).toBeGreaterThan(0);

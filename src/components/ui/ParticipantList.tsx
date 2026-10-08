@@ -28,7 +28,7 @@ export function ParticipantList({ people, emptyHint }: ParticipantListProps) {
       {people.length === 0 && emptyHint && <p className="ui-participants-empty">{emptyHint}</p>}
       <ul>
         {people.map((person) => (
-          <li key={person.id}>
+          <li key={person.id} data-testid="participant">
             <Avatar name={person.name} live={person.live} />
             <span className="ui-participant-copy">
               <strong>{person.name}</strong>

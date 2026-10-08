@@ -25,7 +25,7 @@ export function RoomCode({ code, onCopy }: RoomCodeProps) {
       aria-label={`Copiar o código da sala ${code}`}
     >
       <span className="ui-room-code-caption">Sala</span>
-      <strong>{code}</strong>
+      <strong data-testid="room-code">{code}</strong>
       <span className="ui-room-code-feedback" aria-live="polite">
         {state === "copied" ? (
           <>

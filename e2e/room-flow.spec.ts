@@ -11,14 +11,14 @@ async function startSyntheticShare(page: Page) {
   await expect(
     page.getByRole("button", { name: /Parar transmissão|Parar minha transmissão/ }),
   ).toBeVisible();
-  const preview = page.locator(".host-preview video");
+  const preview = page.locator("[data-testid='live-preview'] video");
   if (await preview.isVisible()) {
     await expect.poll(() => preview.evaluate((element) => element.currentTime)).toBeGreaterThan(0);
   }
 }
 
 async function watchAndAssertFrames(page: Page) {
-  await page.locator(".live-choice").first().click();
+  await page.getByRole("button", { name: "Assistir" }).first().click();
   const video = page.locator("video").first();
   await expect(video).toBeVisible();
   await expect(page.getByText("Clique para reproduzir")).toHaveCount(0);
@@ -89,25 +89,25 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
   await soundAlerts.click();
   await expect(a.getByRole("button", { name: "Ativar avisos da sala" })).toBeVisible();
   await a.getByRole("button", { name: "Ativar avisos da sala" }).click();
-  await expect(a.getByRole("button", { name: "Sair", exact: true })).toBeVisible();
+  await expect(a.getByRole("button", { name: "Sair da sala" })).toBeVisible();
   await expect(a.getByRole("button", { name: "Compartilhar tela" })).toBeVisible();
   await expect
     .poll(() =>
       a.evaluate(() => {
-        const header = document.querySelector(".lobby-header")?.getBoundingClientRect();
-        const content = document.querySelector(".lobby-content")?.getBoundingClientRect();
-        const footer = document.querySelector(".lobby-footer")?.getBoundingClientRect();
-        if (!header || !content || !footer) return false;
-        const alignment = getComputedStyle(document.querySelector(".lobby-content")!).justifyContent;
+        const head = document.querySelector(".room-head")?.getBoundingClientRect();
+        const body = document.querySelector(".room-body")?.getBoundingClientRect();
+        const dock = document.querySelector(".ui-dock")?.getBoundingClientRect();
+        if (!head || !body || !dock) return false;
         return (
-          header.bottom <= content.top + 1 &&
-          content.bottom <= footer.top + 1 &&
-          alignment.includes("center")
+          head.bottom <= body.top + 1 &&
+          body.bottom <= dock.top + 1 &&
+          dock.right <= window.innerWidth + 1 &&
+          dock.bottom <= window.innerHeight + 1
         );
       }),
     )
     .toBe(true);
-  const code = (await a.locator(".lobby-code strong").textContent())?.trim();
+  const code = (await a.getByTestId("room-code").textContent())?.trim();
   expect(code).toMatch(/^[A-Z0-9]{6}$/);
 
   await enterName(b, "Bia");
@@ -130,7 +130,7 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
   }
 
   await startSyntheticShare(a);
-  await expect(b.locator(".live-choice", { hasText: "Ana" })).toBeVisible();
+  await expect(b.getByTestId("participant").filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" })).toBeVisible();
   await watchAndAssertFrames(b);
   await resizeAndAssertVideoFits(b);
   await expect(b.getByRole("button", { name: "Transmitir também" })).toBeVisible();
@@ -139,8 +139,10 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
   await startSyntheticShare(b);
   await expect(b.getByRole("button", { name: "Parar minha transmissão" })).toBeVisible();
 
-  await expect(c.locator(".live-choice")).toHaveCount(2);
-  await c.getByRole("button", { name: "Ver todas em grade" }).click();
+  await expect(
+    c.getByTestId("participant").getByRole("button", { name: "Assistir" }),
+  ).toHaveCount(2);
+  await c.getByRole("button", { name: "Ver lado a lado" }).click();
   await expect(c.locator(".video-area video")).toHaveCount(2);
   await expect(c.locator(".watching-mosaic")).toBeVisible();
   await expect(c.getByRole("button", { name: "Ver em grade" })).toHaveAttribute(
@@ -148,8 +150,8 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
     "true",
   );
 
-  await expect(a.locator(".live-choice", { hasText: "Bia" })).toBeVisible();
-  await a.locator(".live-choice", { hasText: "Bia" }).click();
+  await expect(a.getByTestId("participant").filter({ hasText: "Bia" }).getByRole("button", { name: "Assistir" })).toBeVisible();
+  await a.getByTestId("participant").filter({ hasText: "Bia" }).getByRole("button", { name: "Assistir" }).click();
   await expect(a.getByRole("button", { name: "Parar minha transmissão" })).toBeVisible();
   await a.getByRole("button", { name: "Parar de assistir" }).click();
   await expect(a.getByRole("button", { name: "Parar transmissão" })).toBeVisible();
@@ -165,12 +167,12 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
   await expect(b.locator(".camera-tile")).toHaveCount(0);
   await expect(c.locator(".camera-tile")).toHaveCount(0);
 
-  await b.getByRole("button", { name: "Sair", exact: true }).click();
+  await b.getByRole("button", { name: "Sair da sala" }).click();
   await expect(b.getByRole("button", { name: "Entrar na sala" })).toBeVisible();
   await b.getByRole("textbox", { name: "Código ou link do convite" }).fill(code!);
   await b.getByRole("button", { name: "Entrar na sala" }).click();
-  await expect(a.locator(".person-chip", { hasText: "Bia" })).toHaveCount(1);
-  await expect(a.locator(".person-chip", { hasText: "Bia · reconectando" })).toHaveCount(0);
+  await expect(a.getByTestId("participant").filter({ hasText: "Bia" })).toHaveCount(1);
+  await expect(a.getByTestId("participant").filter({ hasText: "Reconectando" })).toHaveCount(0);
 
   await contextA.close();
   await contextB.close();

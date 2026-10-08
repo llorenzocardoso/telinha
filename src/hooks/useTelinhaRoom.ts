@@ -108,6 +108,7 @@ export function useTelinhaRoom(
   const [participants, setParticipants] = useState<RoomPerson[]>([]);
   const [watcherCounts, setWatcherCounts] = useState<Record<string, number>>({});
   const [watcherNames, setWatcherNames] = useState<Record<string, string[]>>({});
+  const [watcherIds, setWatcherIds] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [connectionQuality, setConnectionQuality] = useState<ConnectionQuality>("offline");
   const [peerHealth, setPeerHealth] = useState<PeerHealthSample[]>([]);
@@ -126,6 +127,7 @@ export function useTelinhaRoom(
     const audience = audienceRef.current;
     setWatcherCounts({ [localId]: audience.size });
     setWatcherNames({ [localId]: audience.names() });
+    setWatcherIds({ [localId]: audience.ids() });
     if (audience.size !== audienceCountRef.current) {
       audienceCountRef.current = audience.size;
       recordDiagnostic("audience-change", { count: audience.size });
@@ -764,6 +766,7 @@ export function useTelinhaRoom(
       watching.clear();
       setWatcherCounts({});
       setWatcherNames({});
+      setWatcherIds({});
       setScreenShares([]);
       setCameras([]);
       setParticipants([]);
@@ -989,6 +992,7 @@ export function useTelinhaRoom(
     participants,
     watcherCounts,
     watcherNames,
+    watcherIds,
     connectionQuality,
     copyDiagnostics: buildDiagnostics,
     startShare,
