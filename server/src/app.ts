@@ -14,12 +14,14 @@ import {
 import {
   CURRENT_PROTOCOL_VERSION,
   MAX_SIGNAL_PAYLOAD_BYTES,
+  SERVER_FEATURES,
   isProtocolError,
   parseClientAuthentication,
   parseClientSignal,
   readProtocolVersion,
 } from "./protocol.js";
 import { renderInvitePage } from "./invitePage.js";
+import { createRuntimeConfig, type FlagSource } from "./runtimeConfig.js";
 import { createIceServerProvider, type TurnProviderOptions } from "./turn.js";
 
 const SEAT_TTL_MS = 2 * 60 * 1000;
@@ -53,6 +55,7 @@ interface Hold {
   token: string;
   name: string;
   sharing: boolean;
+  cameraStreamId: string | null;
   expiresAt: number;
 }
 
@@ -60,6 +63,7 @@ interface Participant {
   id: string;
   name: string;
   sharing: boolean;
+  cameraStreamId: string | null;
   token: string;
   replaced: boolean;
   ws: WebSocket;
@@ -91,6 +95,8 @@ export interface TelinhaServerOptions {
   maxRateBuckets?: number;
   authenticationTimeoutMs?: number;
   turn?: TurnProviderOptions;
+  /** Fonte das flags de runtime; sem ela, lê do ambiente do processo. */
+  flags?: FlagSource;
 }
 
 export interface TelinhaServer {
@@ -115,11 +121,25 @@ function tokensEqual(left: string, right: string): boolean {
   return timingSafeEqual(a, b);
 }
 
-function publicParticipant(participant: Participant, connected = true) {
+interface ListedPerson {
+  id: string;
+  name: string;
+  sharing: boolean;
+  camera: boolean;
+  cameraStreamId?: string;
+  connected: boolean;
+}
+
+function publicParticipant(
+  participant: Pick<Participant, "id" | "name" | "sharing" | "cameraStreamId">,
+  connected = true,
+): ListedPerson {
   return {
     id: participant.id,
     name: participant.name,
     sharing: participant.sharing,
+    camera: participant.cameraStreamId !== null,
+    cameraStreamId: participant.cameraStreamId ?? undefined,
     connected,
   };
 }
@@ -148,7 +168,11 @@ export function createTelinhaServer(options: TelinhaServerOptions = {}): Telinha
   const cleanupIntervalMs = options.cleanupIntervalMs ?? 5_000;
   const minProtocolVersion = options.minProtocolVersion ?? CURRENT_PROTOCOL_VERSION;
   const minAppVersion = options.minAppVersion?.trim() || "0.2.0";
-  const iceServers = createIceServerProvider(options.turn);
+  const runtime = createRuntimeConfig(options.flags ?? (() => process.env));
+  const iceServers = createIceServerProvider({
+    ...options.turn,
+    isEnabled: () => runtime.read().turnEnabled,
+  });
   const maxRateBuckets = Math.max(1, options.maxRateBuckets ?? MAX_RATE_BUCKETS);
   const authenticationTimeoutMs =
     options.authenticationTimeoutMs ?? AUTHENTICATION_TIMEOUT_MS;
@@ -276,6 +300,7 @@ export function createTelinhaServer(options: TelinhaServerOptions = {}): Telinha
       token: participant.token,
       name: participant.name,
       sharing: participant.sharing,
+      cameraStreamId: participant.cameraStreamId,
       expiresAt: Date.now() + reconnectGraceMs,
     });
     broadcast(room, { type: "participant-presence", participantId, connected: false });
@@ -302,17 +327,9 @@ export function createTelinhaServer(options: TelinhaServerOptions = {}): Telinha
   }
 
   function listedPeople(room: Room) {
-    const people = new Map<
-      string,
-      { id: string; name: string; sharing: boolean; connected: boolean }
-    >();
+    const people = new Map<string, ListedPerson>();
     for (const hold of room.holds.values()) {
-      people.set(hold.id, {
-        id: hold.id,
-        name: hold.name,
-        sharing: hold.sharing,
-        connected: false,
-      });
+      people.set(hold.id, publicParticipant(hold, false));
     }
     for (const participant of room.participants.values()) {
       people.set(participant.id, publicParticipant(participant));
@@ -340,6 +357,8 @@ export function createTelinhaServer(options: TelinhaServerOptions = {}): Telinha
       wsUrl: wsUrlFromRequest(req),
       protocolVersion: CURRENT_PROTOCOL_VERSION,
       wsAuthMode: "message" as const,
+      features: SERVER_FEATURES,
+      turnMaxBitrateKbps: runtime.read().turnMaxBitrateKbps,
       iceServers: await iceServers.getIceServers(),
     };
   }
@@ -437,7 +456,13 @@ export function createTelinhaServer(options: TelinhaServerOptions = {}): Telinha
   });
 
   app.get("/app-config", (_req, res) => {
-    res.json({ minAppVersion, minProtocolVersion });
+    const flags = runtime.read();
+    res.json({
+      minAppVersion,
+      minProtocolVersion,
+      turnEnabled: flags.turnEnabled,
+      turnMaxBitrateKbps: flags.turnMaxBitrateKbps,
+    });
   });
 
   app.post("/rooms", requireProtocol, rateLimited(createHits, CREATE_LIMIT), async (req, res) => {
@@ -573,6 +598,22 @@ export function createTelinhaServer(options: TelinhaServerOptions = {}): Telinha
         return;
       }
 
+      if (message.type === "camera-started") {
+        current.cameraStreamId = message.streamId;
+        broadcast(
+          room,
+          { type: "camera-started", participantId: participant.id, streamId: message.streamId },
+          participant.id,
+        );
+        return;
+      }
+
+      if (message.type === "camera-stopped") {
+        current.cameraStreamId = null;
+        broadcast(room, { type: "camera-stopped", participantId: participant.id }, participant.id);
+        return;
+      }
+
       if (
         (message.type === "watch-started" || message.type === "watch-stopped") &&
         typeof message.to === "string"
@@ -680,6 +721,7 @@ export function createTelinhaServer(options: TelinhaServerOptions = {}): Telinha
       id: admitted.id,
       name: admitted.name,
       sharing: "sharing" in admitted ? Boolean(admitted.sharing) : false,
+      cameraStreamId: hold?.cameraStreamId ?? null,
       token,
       replaced: false,
       ws,

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { PhoneOff } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Bell, BellOff, Link, LogOut, Monitor, Settings, Square, Video, VideoOff } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import type { RoomSession } from "../lib/api";
@@ -8,13 +8,34 @@ import {
   ConnectionState,
   useTelinhaRoom,
   type ScreenShareInfo,
+  type ShareQuality,
 } from "../hooks/useTelinhaRoom";
-import { ConnectionBadge, ErrorNotice } from "../components/ConnectionStatus";
+import { ErrorNotice } from "../components/ConnectionStatus";
 import { areSoundsEnabled, setSoundsEnabled } from "../lib/sounds";
-import { addWatching, mosaicColumns, pruneWatching, removeWatching } from "../lib/watch";
+import {
+  addWatching,
+  mosaicColumns,
+  parseWatchVolumes,
+  pruneWatching,
+  removeWatching,
+  setWatchVolume,
+} from "../lib/watch";
 import { ScreenSharePicker } from "../components/ScreenSharePicker";
+import { CameraSettings } from "../components/CameraSettings";
+import { CameraStrip } from "../components/CameraStrip";
 import { VideoTile } from "../components/VideoTile";
 import { LiveControls } from "../components/LiveControls";
+import { RoomLayout } from "../components/RoomLayout";
+import { describeParticipants } from "../room/participants";
+import {
+  Avatar,
+  Button,
+  ConnectionIndicator,
+  Dock,
+  EmptyState,
+  IconButton,
+  RoomCode,
+} from "../components/ui";
 
 interface RoomScreenProps {
   session: RoomSession;
@@ -26,6 +47,15 @@ interface RoomScreenProps {
   onPickerOpened?: () => void;
   trayStartRequest?: boolean;
   onTrayStartHandled?: () => void;
+}
+
+const VOLUMES_KEY = "telinha-watch-volumes";
+
+/** "1080p · 60 fps" para o rótulo da prévia; "Original" quando não há limite de altura. */
+function describeShareQuality(quality: ShareQuality | null): string {
+  if (!quality) return "";
+  const resolution = quality.maxHeight && quality.maxHeight > 0 ? `${quality.maxHeight}p` : "Original";
+  return `${resolution} · ${quality.fps} fps`;
 }
 
 interface RoomToast {
@@ -49,17 +79,24 @@ export function RoomScreen({
   const [copied, setCopied] = useState(false);
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [cameraSettingsOpen, setCameraSettingsOpen] = useState(false);
   const [watchingIds, setWatchingIds] = useState<string[]>([]);
-  const [volume, setVolume] = useState(() => {
-    const stored = Number(localStorage.getItem("telinha-watch-volume"));
-    return Number.isFinite(stored) ? Math.min(100, Math.max(0, stored)) : 100;
-  });
+  // Volume de cada transmissão nesta sala, por participante.
+  const [volumes, setVolumes] = useState<Record<string, number>>({});
+  // Último volume usado com cada nome, para a pessoa voltar no mesmo nível em outra sessão.
+  const [rememberedVolumes, setRememberedVolumes] = useState(() =>
+    parseWatchVolumes(localStorage.getItem(VOLUMES_KEY)),
+  );
   const [chromeVisible, setChromeVisible] = useState(true);
   const [controlsLocked, setControlsLocked] = useState(false);
   const [watchFullscreen, setWatchFullscreen] = useState(() => {
     return localStorage.getItem("telinha-watch-fullscreen") === "1";
   });
   const [roomSounds, setRoomSounds] = useState(areSoundsEnabled);
+  // Qualidade escolhida no picker, só para o rótulo da prévia.
+  const [shareQuality, setShareQuality] = useState<ShareQuality | null>(null);
+  const [liveSince, setLiveSince] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const [toasts, setToasts] = useState<RoomToast[]>([]);
   const knownLives = useRef<Map<string, string>>(new Map());
   const toastSeq = useRef(0);
@@ -70,22 +107,39 @@ export function RoomScreen({
   const {
     connectionState,
     isSharing,
+    isCameraOn,
+    cameraSupported,
     screenShares,
+    cameras,
     participants,
     watcherCounts,
-    watcherNames,
+    watcherIds,
     connectionQuality,
     copyDiagnostics,
     retryConnections,
     startShare,
     stopShare,
+    startCamera,
+    stopCamera,
+    applyCameraDevice,
     setWatchingShare,
     error,
   } = useTelinhaRoom(session, { onSessionRefresh, onUpdateRequired });
 
   useEffect(() => {
-    onSharingChange?.(isSharing);
-  }, [isSharing, onSharingChange]);
+    onSharingChange?.(isSharing || isCameraOn);
+  }, [isSharing, isCameraOn, onSharingChange]);
+
+  // O selo "Ao vivo" conta o tempo no ar; o relógio só corre enquanto há transmissão.
+  useEffect(() => {
+    if (!isSharing) {
+      setLiveSince(null);
+      return;
+    }
+    setLiveSince((current) => current ?? Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [isSharing]);
 
   useEffect(() => {
     void invoke("set_discord_presence", { code: session.code }).catch(() => undefined);
@@ -93,8 +147,6 @@ export function RoomScreen({
       void invoke("set_discord_presence", { code: null }).catch(() => undefined);
     };
   }, [session.code]);
-
-  const displayName = session.displayName;
   const localId = session.participantId;
   const remoteShares = screenShares.filter((share) => share.participantIdentity !== localId);
   const localShare = screenShares.find((share) => share.participantIdentity === localId);
@@ -104,6 +156,7 @@ export function RoomScreen({
   const watching = watchingShares.length > 0 && !pickerOpen;
   const hosting = isSharing && !watching && !pickerOpen;
   const multiWatch = watchingShares.length > 1;
+  const hasCameras = cameras.length > 0;
   const remoteShareKey = remoteShares
     .map((share) => `${share.participantIdentity}\t${share.participantName}`)
     .join("\0");
@@ -186,17 +239,19 @@ export function RoomScreen({
             : "watch-window"
         : hosting
           ? "host"
-          : "lobby";
+          : hasCameras
+            ? "lobby-cameras"
+            : "lobby";
     void invoke("set_window_layout", { layout }).catch(() => undefined);
-  }, [pickerOpen, watching, hosting, watchFullscreen, multiWatch]);
+  }, [pickerOpen, watching, hosting, watchFullscreen, multiWatch, hasCameras]);
 
   useEffect(() => {
     localStorage.setItem("telinha-watch-fullscreen", watchFullscreen ? "1" : "0");
   }, [watchFullscreen]);
 
   useEffect(() => {
-    localStorage.setItem("telinha-watch-volume", String(volume));
-  }, [volume]);
+    localStorage.setItem(VOLUMES_KEY, JSON.stringify(rememberedVolumes));
+  }, [rememberedVolumes]);
 
   const watchedRef = useRef<string[]>([]);
   useEffect(() => {
@@ -259,9 +314,18 @@ export function RoomScreen({
     };
   }, [controlsLocked, watching]);
 
+  const closeCameraSettings = useCallback(() => {
+    setCameraSettingsOpen(false);
+    void applyCameraDevice();
+  }, [applyCameraDevice]);
+
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        if (cameraSettingsOpen) {
+          closeCameraSettings();
+          return;
+        }
         if (pickerOpen) {
           setPickerOpen(false);
           return;
@@ -281,7 +345,7 @@ export function RoomScreen({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [pickerOpen, watching, watchFullscreen]);
+  }, [cameraSettingsOpen, closeCameraSettings, pickerOpen, watching, watchFullscreen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -391,6 +455,30 @@ export function RoomScreen({
   const connected = connectionState === ConnectionState.Connected;
   const reconnecting = connectionState === ConnectionState.Reconnecting;
   const localViewers = watcherCounts[localId] ?? 0;
+  const shareSummary = describeShareQuality(shareQuality);
+
+  /** O RoomCode quer saber se a cópia deu certo para dar o retorno no próprio botão. */
+  const copyRoomCode = useCallback(() => copyToClipboard(session.code), [session.code]);
+
+  const people = useMemo(
+    () =>
+      describeParticipants({
+        people: participants,
+        localId,
+        watching: watchingIds,
+        watchers: watcherIds[localId] ?? [],
+      }),
+    [participants, localId, watchingIds, watcherIds],
+  );
+
+  function shareVolume(share: ScreenShareInfo): number {
+    return volumes[share.participantIdentity] ?? rememberedVolumes[share.participantName] ?? 100;
+  }
+
+  function changeShareVolume(share: ScreenShareInfo, volume: number) {
+    setVolumes((current) => setWatchVolume(current, share.participantIdentity, volume));
+    setRememberedVolumes((current) => setWatchVolume(current, share.participantName, volume));
+  }
 
   function watchShare(id: string) {
     setWatchingIds((current) =>
@@ -420,6 +508,29 @@ export function RoomScreen({
     setSoundsEnabled(next);
   }
 
+  function toggleCamera() {
+    if (isCameraOn) {
+      stopCamera();
+      return;
+    }
+    void startCamera();
+  }
+
+  const cameraReady = connected && cameraSupported;
+  const cameraLabel = isCameraOn ? "Desligar câmera" : "Ligar câmera";
+  const cameraHint = cameraSupported
+    ? cameraLabel
+    : "O servidor desta sala ainda não aceita câmera";
+  const cameraIcon = isCameraOn ? (
+    <Video aria-hidden="true" strokeWidth={2.2} />
+  ) : (
+    <VideoOff aria-hidden="true" strokeWidth={2.2} />
+  );
+  const openCameraSettings = () => setCameraSettingsOpen(true);
+  const cameraSettings = cameraSettingsOpen ? (
+    <CameraSettings onClose={closeCameraSettings} />
+  ) : null;
+
   function toggleOwnShare() {
     if (isSharing) {
       void stopShare();
@@ -434,6 +545,7 @@ export function RoomScreen({
         onCancel={() => setPickerOpen(false)}
         onShare={async (sourceId, quality) => {
           await startShare(sourceId, quality);
+          setShareQuality(quality);
           await copyWithToast(inviteLink(session.code), "Link de compartilhamento copiado");
           setPickerOpen(false);
         }}
@@ -444,7 +556,9 @@ export function RoomScreen({
   if (watching) {
     return (
       <div
-        className={`screen room-screen watching ${watchFullscreen ? "watching-full" : "watching-window"} ${multiWatch ? "watching-mosaic" : ""} ${chromeVisible ? "chrome-on" : "chrome-off"}`}
+        className={`screen watch ${watchFullscreen ? "is-full" : "is-window"} ${
+          multiWatch ? "is-mosaic" : ""
+        } ${chromeVisible ? "chrome-on" : "chrome-off"}`}
       >
         {watchingShares.map(
           (share) =>
@@ -452,35 +566,20 @@ export function RoomScreen({
               <WatchAudio
                 key={share.participantIdentity}
                 stream={share.stream}
-                volume={volume}
+                volume={shareVolume(share)}
               />
             ),
         )}
-        <header className="watch-chrome top">
-          <div className="watch-heading">
-            <div className="watch-live-title">
-              <span className="watch-live-label"><span />Ao vivo</span>
-              <strong>
-                {multiWatch
-                  ? `${watchingShares.length} transmissões`
-                  : watchingShares[0]?.participantName}
-              </strong>
-            </div>
-            {isSharing && (
-              <div className="self-live-status">
-                Sua tela está ao vivo · {localViewers} assistindo
-              </div>
-            )}
-          </div>
-          <ConnectionBadge quality={connectionQuality} />
-        </header>
 
+        {/* O vídeo ocupa a janela inteira; nada de barra fixa. */}
         <div
-          className={`video-area ${multiWatch ? "mosaic" : ""}`}
+          className="watch-video"
           data-count={watchingShares.length}
           style={
             multiWatch
-              ? { gridTemplateColumns: `repeat(${mosaicColumns(watchingShares.length)}, minmax(0, 1fr))` }
+              ? {
+                  gridTemplateColumns: `repeat(${mosaicColumns(watchingShares.length)}, minmax(0, 1fr))`,
+                }
               : undefined
           }
         >
@@ -489,61 +588,65 @@ export function RoomScreen({
               {share.stream ? (
                 <VideoTile stream={share.stream} active />
               ) : (
-                <div className="video-placeholder">
+                <div className="watch-pane-empty">
                   <p>Conectando…</p>
                 </div>
               )}
-              {multiWatch && <span className="watch-pane-name">{share.participantName}</span>}
               {multiWatch && (
-                <div className="watch-pane-actions">
-                  <button
-                    type="button"
-                    className="watch-pane-close"
-                    onClick={() => stopWatching(share.participantIdentity)}
-                  >
-                    Fechar
-                  </button>
-                </div>
+                <span className="watch-pane-name">{share.participantName}</span>
               )}
             </div>
           ))}
         </div>
 
-        {remoteShares.length > 1 && (
-          <nav className="live-switcher overlay-tabs" aria-label="Escolher transmissão">
-            <span className="live-switcher-label">Ao vivo</span>
-            {remoteShares.map((share) => (
-              <button
-                key={share.participantIdentity}
-                type="button"
-                className={`live-switcher-item ${watchingIds.length === 1 && watchingIds.includes(share.participantIdentity) ? "active" : ""}`}
-                aria-pressed={watchingIds.length === 1 && watchingIds.includes(share.participantIdentity)}
-                onClick={() => watchOnly(share.participantIdentity)}
-              >
-                <span className="live-dot" aria-hidden="true" />
-                {share.participantName}
-              </button>
-            ))}
-            <button
-              type="button"
-              className={`live-switcher-item grid-option ${watchingIds.length > 1 ? "active" : ""}`}
-              aria-pressed={watchingIds.length > 1}
-              onClick={watchAll}
-            >
-              <GridIcon />
-              Ver em grade
-            </button>
-          </nav>
-        )}
+        {/* Dois selos flutuantes: o que está na tela e o código da sala. */}
+        <div className="watch-badges">
+          <span className="watch-badge">
+            {multiWatch ? (
+              <Monitor aria-hidden="true" strokeWidth={1.8} />
+            ) : (
+              <Avatar name={watchingShares[0]?.participantName ?? "?"} live />
+            )}
+            {multiWatch
+              ? `${watchingShares.length} transmissões`
+              : `Tela de ${watchingShares[0]?.participantName ?? ""}`}
+          </span>
+        </div>
+
+        <div className="watch-status">
+          <ConnectionIndicator quality={connectionQuality} />
+          {isSharing && (
+            <span className="watch-self">Sua tela está ao vivo · {localViewers} assistindo</span>
+          )}
+          <RoomCode code={session.code} onCopy={copyRoomCode} />
+        </div>
+
+        <CameraStrip cameras={cameras} onOpenSettings={openCameraSettings} />
 
         <LiveControls
-          volume={volume}
+          volumes={watchingShares.map((share) => ({
+            id: share.participantIdentity,
+            name: multiWatch ? share.participantName : undefined,
+            volume: shareVolume(share),
+            onChange: (next: number) => changeShareVolume(share, next),
+          }))}
+          choices={remoteShares.map((share) => ({
+            id: share.participantIdentity,
+            name: share.participantName,
+            active: watchingIds.includes(share.participantIdentity),
+          }))}
           fullscreen={watchFullscreen}
           connected={connected}
           isSharing={isSharing}
-          onVolumeChange={setVolume}
+          cameraOn={isCameraOn}
+          cameraReady={cameraReady}
+          cameraLabel={cameraHint}
+          sideBySide={multiWatch}
+          onWatchOnly={watchOnly}
+          onWatchAll={watchAll}
           onToggleFullscreen={() => setWatchFullscreen((open) => !open)}
           onToggleShare={toggleOwnShare}
+          onToggleCamera={toggleCamera}
           onStopWatching={() => stopWatching()}
           onLeaveRoom={onLeave}
           onLockChange={setControlsLocked}
@@ -565,169 +668,136 @@ export function RoomScreen({
             setToasts((current) => current.filter((toast) => toast.shareId !== id));
           }}
         />
+        {cameraSettings}
       </div>
     );
   }
 
-  if (hosting) {
-    return (
-      <div className="screen room-screen host-screen">
-        <header className="host-header">
-          <div className="host-live-summary">
-            <span className="watch-live-label"><span />Ao vivo</span>
-            <div>
-              <strong>Sua tela</strong>
-              <small>
-                {localViewers === 0
-                  ? "Ninguém assistindo ainda"
-                  : `${localViewers} ${localViewers === 1 ? "pessoa assistindo" : "pessoas assistindo"}`}
-              </small>
-            </div>
-          </div>
-          <div className="host-header-actions">
-            <ConnectionBadge quality={connectionQuality} />
-            <button type="button" className="room-code-copy" onClick={copyCode}>
-              <span>Sala</span>
-              <strong>{session.code}</strong>
-              <small>{copied ? "Copiado" : "Copiar"}</small>
-            </button>
-          </div>
-        </header>
-
-        <div className="host-preview">
-          {localShare?.stream ? (
-            <>
-              <VideoTile stream={localShare.stream} active />
-              <span className="host-preview-label">Prévia da sua transmissão</span>
-            </>
-          ) : (
-            <div className="video-placeholder">
-              <p>Preparando preview...</p>
-            </div>
-          )}
+  const stage = isSharing ? (
+    <div className="stage-preview" data-testid="live-preview">
+      {localShare?.stream ? (
+        <VideoTile stream={localShare.stream} active />
+      ) : (
+        <div className="stage-placeholder">
+          <p>Preparando a prévia...</p>
         </div>
+      )}
+      <span className="stage-preview-label">
+        Prévia da sua tela{shareSummary ? ` · ${shareSummary}` : ""}
+      </span>
+    </div>
+  ) : remoteShares.length > 0 ? (
+    <EmptyState
+      icon={<Monitor strokeWidth={1.8} />}
+      title={
+        remoteShares.length === 1
+          ? `Tela de ${remoteShares[0]!.participantName}`
+          : `${remoteShares.length} transmissões ao vivo`
+      }
+      hint="Escolha quem assistir aqui ou na lista ao lado."
+      actions={
+        <>
+          <Button variant="primary" onClick={() => watchOnly(remoteShares[0]!.participantIdentity)}>
+            Assistir
+          </Button>
+          {remoteShares.length > 1 && (
+            <Button variant="outline" onClick={watchAll}>
+              Ver lado a lado
+            </Button>
+          )}
+        </>
+      }
+    />
+  ) : (
+    <EmptyState
+      icon={<Monitor strokeWidth={1.8} />}
+      title="Ninguém transmitindo ainda"
+      hint="Mande o convite pra galera ou comece você mesmo pela barra abaixo."
+      actions={
+        <>
+          <Button
+            variant="tonal"
+            icon={<Link strokeWidth={1.8} />}
+            onClick={() => void copyWithToast(inviteLink(session.code), "Convite copiado")}
+          >
+            Copiar convite
+          </Button>
+          <Button variant="ghost" onClick={() => void copyCode()}>
+            {copied ? "Copiado!" : "Copiar código"}
+          </Button>
+        </>
+      }
+    />
+  );
 
-        {remoteShares.length > 0 && (
-          <LiveChooser
-            shares={remoteShares}
-            title="Outras transmissões"
-            compact
-            onWatch={watchOnly}
-            onWatchAll={watchAll}
-          />
-        )}
-
-        <footer className="host-controls">
-          <div className="host-viewers" aria-live="polite">
-            {watcherNames[localId]?.length
-              ? `Assistindo: ${watcherNames[localId]!.join(", ")}`
-              : "Sua transmissão está pronta para receber espectadores"}
-          </div>
-          <div className="host-control-dock" aria-label="Controles da transmissão">
-            <button
-              type="button"
-              className="host-control-button stop-share"
-              onClick={() => void stopShare()}
-            >
-              <StopShareIcon />
-              <span>Parar transmissão</span>
-            </button>
-            <button type="button" className="host-control-button leave-room" onClick={onLeave}>
-              <PhoneOff aria-hidden="true" strokeWidth={2.2} />
-              <span>Sair da sala</span>
-            </button>
-          </div>
-          <div className="host-control-spacer" aria-hidden="true" />
-        </footer>
-        {error && (
-          <ErrorNotice
-            error={error}
-            copied={diagnosticsCopied}
-            onCopy={() => void copyDiagnosticReport()}
-            onRetry={() => void retryConnections()}
-          />
-        )}
-        <ToastStack toasts={toasts} onWatch={watchShare} />
-      </div>
-    );
-  }
+  // A dock é igual nas duas telas: só o botão do meio troca de verbo.
+  const dock = (
+    <Dock label="Controles da sala" variant="fixed">
+      <Button
+        variant="primary"
+        size="lg"
+        icon={isSharing ? <Square strokeWidth={1.8} fill="currentColor" /> : <Monitor strokeWidth={1.8} />}
+        shortcut="Ctrl⇧S"
+        disabled={!connected}
+        onClick={toggleOwnShare}
+      >
+        {isSharing ? "Parar transmissão" : "Compartilhar tela"}
+      </Button>
+      <IconButton
+        label={cameraHint}
+        icon={cameraIcon}
+        size="lg"
+        active={isCameraOn}
+        disabled={!cameraReady}
+        onClick={toggleCamera}
+      />
+      <IconButton
+        label="Escolher câmera"
+        icon={<Settings aria-hidden="true" strokeWidth={1.8} />}
+        size="lg"
+        onClick={openCameraSettings}
+      />
+      <IconButton
+        label="Copiar convite"
+        icon={<Link aria-hidden="true" strokeWidth={1.8} />}
+        size="lg"
+        onClick={() => void copyWithToast(inviteLink(session.code), "Convite copiado")}
+      />
+      <IconButton
+        label={roomSounds ? "Silenciar avisos da sala" : "Ativar avisos da sala"}
+        icon={
+          roomSounds ? (
+            <Bell aria-hidden="true" strokeWidth={1.8} />
+          ) : (
+            <BellOff aria-hidden="true" strokeWidth={1.8} />
+          )
+        }
+        size="lg"
+        onClick={toggleRoomSounds}
+      />
+      <IconButton
+        label="Sair da sala"
+        icon={<LogOut aria-hidden="true" strokeWidth={1.8} />}
+        size="lg"
+        variant="danger"
+        onClick={onLeave}
+      />
+    </Dock>
+  );
 
   return (
-    <div className="screen room-screen lobby-screen">
-      <header className="room-header lobby-header">
-        <div className="room-statuses">
-          <span className={`status ${connected ? "online" : ""}`}>
-            {connected ? displayName : reconnecting ? "Reconectando..." : "Conectando..."}
-          </span>
-          <ConnectionBadge quality={connectionQuality} />
-        </div>
-        <div className="lobby-header-actions">
-          <button
-            type="button"
-            className="btn btn-ghost notification-toggle"
-            aria-label={roomSounds ? "Silenciar avisos da sala" : "Ativar avisos da sala"}
-            aria-pressed={roomSounds}
-            title={roomSounds ? "Silenciar avisos da sala" : "Ativar avisos da sala"}
-            onClick={toggleRoomSounds}
-          >
-            <NotificationIcon muted={!roomSounds} />
-            <span>Avisos</span>
-          </button>
-          <button type="button" className="btn btn-ghost lobby-leave" onClick={onLeave}>
-            Sair
-          </button>
-        </div>
-      </header>
-
-      <main className="lobby-content">
-        {reconnecting && <p className="reconnect-banner">A conexão caiu. Tentando de novo...</p>}
-
-        <div className="lobby-code">
-          <p>Código da sala</p>
-          <strong>{session.code}</strong>
-          <button type="button" className="btn btn-primary" onClick={copyCode}>
-            {copied ? "Copiado!" : "Copiar código"}
-          </button>
-        </div>
-
-        <div className="people-list">
-          <p>Na sala</p>
-          {participants.length === 0 && <span className="muted">Conectando pessoas...</span>}
-          {participants.map((person) => (
-            <span key={person.identity} className="person-chip">
-              {person.name}
-              {person.isLocal ? " (você)" : ""}
-              {person.isSharing ? " · no ar" : ""}
-              {!person.connected ? " · reconectando" : ""}
-            </span>
-          ))}
-        </div>
-
-        {remoteShares.length > 0 ? (
-          <LiveChooser
-            shares={remoteShares}
-            title="Transmissões ao vivo"
-            onWatch={watchOnly}
-            onWatchAll={watchAll}
-          />
-        ) : (
-          <p className="hint">Nenhuma transmissão no momento</p>
-        )}
-      </main>
-
-      <footer className="room-footer lobby-footer">
-        <button
-          type="button"
-          className="btn btn-share"
-          onClick={() => setPickerOpen(true)}
-          disabled={!connected}
-        >
-          <span className="share-icon" aria-hidden="true" />
-          Compartilhar tela
-        </button>
-        <span className="shortcut-hint">Ctrl+Shift+S</span>
-      </footer>
-
+    <RoomLayout
+      code={session.code}
+      onCopyCode={copyRoomCode}
+      connectionQuality={connectionQuality}
+      airTimeMs={isSharing && liveSince !== null ? now - liveSince : undefined}
+      people={people}
+      stage={stage}
+      dock={dock}
+      onWatch={watchOnly}
+    >
+      <CameraStrip cameras={cameras} onOpenSettings={openCameraSettings} />
+      {reconnecting && <p className="room-banner">A conexão caiu. Tentando de novo...</p>}
       {error && (
         <ErrorNotice
           error={error}
@@ -737,85 +807,8 @@ export function RoomScreen({
         />
       )}
       <ToastStack toasts={toasts} onWatch={watchShare} />
-    </div>
-  );
-}
-
-function NotificationIcon({ muted }: { muted: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
-      {muted && <path d="m4 4 16 16" />}
-    </svg>
-  );
-}
-
-function LiveChooser({
-  shares,
-  title,
-  compact,
-  onWatch,
-  onWatchAll,
-}: {
-  shares: ScreenShareInfo[];
-  title: string;
-  compact?: boolean;
-  onWatch: (id: string) => void;
-  onWatchAll: () => void;
-}) {
-  return (
-    <section className={`live-chooser ${compact ? "compact" : ""}`} aria-label={title}>
-      <header className="live-chooser-header">
-        <div>
-          <span className="live-dot" aria-hidden="true" />
-          <strong>{title}</strong>
-        </div>
-        <span>{shares.length}</span>
-      </header>
-      <div className="live-choice-list">
-        {shares.map((share) => (
-          <button
-            key={share.participantIdentity}
-            type="button"
-            className="live-choice"
-            onClick={() => onWatch(share.participantIdentity)}
-          >
-            <span className="live-choice-screen" aria-hidden="true" />
-            <span className="live-choice-copy">
-              <strong>{share.participantName}</strong>
-              <small>Transmitindo agora</small>
-            </span>
-            <span className="live-choice-action">Assistir</span>
-          </button>
-        ))}
-      </div>
-      {shares.length > 1 && (
-        <button type="button" className="watch-grid-button" onClick={onWatchAll}>
-          <GridIcon />
-          Ver todas em grade
-        </button>
-      )}
-    </section>
-  );
-}
-
-function GridIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="3" y="3" width="7" height="7" rx="1" />
-      <rect x="14" y="3" width="7" height="7" rx="1" />
-      <rect x="3" y="14" width="7" height="7" rx="1" />
-      <rect x="14" y="14" width="7" height="7" rx="1" />
-    </svg>
-  );
-}
-
-function StopShareIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="3" y="4" width="18" height="13" rx="2" />
-      <path d="M9 9h6v4H9zM8 21h8M12 17v4" />
-    </svg>
+      {cameraSettings}
+    </RoomLayout>
   );
 }
 
@@ -849,7 +842,7 @@ function ToastStack({
   );
 }
 
-function WatchAudio({
+export function WatchAudio({
   stream,
   volume,
 }: {
@@ -861,28 +854,54 @@ function WatchAudio({
   volumeRef.current = volume;
 
   useEffect(() => {
-    const tracks = stream.getAudioTracks();
-    if (tracks.length === 0) return;
-    const element = document.createElement("audio");
-    element.autoplay = true;
-    element.setAttribute("playsinline", "true");
-    element.srcObject = new MediaStream(tracks);
-    element.volume = volumeRef.current / 100;
-    document.body.appendChild(element);
-    elementRef.current = element;
-    return () => {
+    // O ontrack do vídeo chega antes do áudio, com o MESMO objeto MediaStream, então não
+    // basta reagir à identidade da stream: é preciso escutar a faixa que chega depois.
+    let element: HTMLAudioElement | null = null;
+
+    function detach() {
+      if (!element) return;
       element.srcObject = null;
       element.remove();
-      if (elementRef.current === element) {
-        elementRef.current = null;
+      if (elementRef.current === element) elementRef.current = null;
+      element = null;
+    }
+
+    function sync() {
+      const tracks = stream.getAudioTracks();
+      if (tracks.length === 0) {
+        detach();
+        return;
       }
+      if (!element) {
+        element = document.createElement("audio");
+        element.autoplay = true;
+        element.setAttribute("playsinline", "true");
+        document.body.appendChild(element);
+        elementRef.current = element;
+      }
+      element.srcObject = new MediaStream(tracks);
+      element.volume = volumeRef.current / 100;
+      try {
+        // O autoplay já cobre o caso; play() é só o empurrão para quem o ignora.
+        const playing = element.play();
+        if (playing && typeof playing.catch === "function") playing.catch(() => undefined);
+      } catch {
+        // Nem todo ambiente implementa play().
+      }
+    }
+
+    sync();
+    stream.addEventListener("addtrack", sync);
+    stream.addEventListener("removetrack", sync);
+    return () => {
+      stream.removeEventListener("addtrack", sync);
+      stream.removeEventListener("removetrack", sync);
+      detach();
     };
   }, [stream]);
 
   useEffect(() => {
-    if (elementRef.current) {
-      elementRef.current.volume = volume / 100;
-    }
+    if (elementRef.current) elementRef.current.volume = volume / 100;
   }, [volume]);
 
   return null;

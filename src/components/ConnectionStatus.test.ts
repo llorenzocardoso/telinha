@@ -1,18 +1,10 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { ConnectionBadge, ErrorNotice } from "./ConnectionStatus";
+import { ErrorNotice } from "./ConnectionStatus";
 
+// O selo de conexão virou ConnectionIndicator, testado em components/ui/ui.test.tsx.
 describe("ConnectionStatus", () => {
-  it.each([
-    ["good", "Conexão boa"],
-    ["unstable", "Conexão instável"],
-    ["reconnecting", "Reconectando"],
-    ["offline", "Sem conexão"],
-  ] as const)("renderiza %s", (quality, label) => {
-    expect(renderToStaticMarkup(createElement(ConnectionBadge, { quality }))).toContain(label);
-  });
-
   it("oferece diagnóstico junto do erro", () => {
     const html = renderToStaticMarkup(
       createElement(ErrorNotice, {

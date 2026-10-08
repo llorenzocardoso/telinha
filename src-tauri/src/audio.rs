@@ -48,14 +48,17 @@ fn run_capture(
             .ok()
             .map_err(|e| format!("Falha ao iniciar COM: {e:?}"))?;
 
-        let mut audio_client = if source_id.starts_with("screen:") {
-            open_desktop_loopback_without_discord()?
-        } else if let Some(pid) = pid {
-            wasapi::AudioClient::new_application_loopback_client(pid, true)
-                .map_err(|e| e.to_string())?
-        } else {
-            return Err("PID do aplicativo não encontrado".into());
-        };
+        let target =
+            select_loopback_target(source_id, discord_root_pid(), std::process::id(), pid)?;
+        let mut audio_client = match target {
+            LoopbackTarget::ExcludeTree(pid) => {
+                wasapi::AudioClient::new_application_loopback_client(pid, false)
+            }
+            LoopbackTarget::IncludeTree(pid) => {
+                wasapi::AudioClient::new_application_loopback_client(pid, true)
+            }
+        }
+        .map_err(|e| e.to_string())?;
 
         let format = wasapi::WaveFormat::new(
             32,
@@ -110,11 +113,33 @@ fn run_capture(
     }
 }
 
-#[cfg(windows)]
-fn open_desktop_loopback_without_discord() -> Result<wasapi::AudioClient, String> {
-    let pid = discord_root_pid()
-        .ok_or_else(|| "Discord não encontrado; áudio da live desativado".to_string())?;
-    wasapi::AudioClient::new_application_loopback_client(pid, false).map_err(|e| e.to_string())
+/// De qual árvore de processos tirar o áudio da live.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoopbackTarget {
+    /// Captura o que a máquina toca, menos esta árvore de processos.
+    ExcludeTree(u32),
+    /// Captura só o que esta árvore de processos toca.
+    IncludeTree(u32),
+}
+
+/// Escolhe o alvo do loopback a partir da fonte compartilhada.
+///
+/// Compartilhando a tela inteira, o Discord fica de fora quando está aberto: ele já toca o
+/// áudio da chamada por conta própria. Sem o Discord, quem fica de fora é o próprio Telinha,
+/// senão o loopback pega a live que estamos assistindo e a devolve para dentro da nossa.
+/// Compartilhando uma janela, captura só o processo dela.
+pub fn select_loopback_target(
+    source_id: &str,
+    discord_pid: Option<u32>,
+    self_pid: u32,
+    window_pid: Option<u32>,
+) -> Result<LoopbackTarget, String> {
+    if source_id.starts_with("screen:") {
+        return Ok(LoopbackTarget::ExcludeTree(discord_pid.unwrap_or(self_pid)));
+    }
+    window_pid
+        .map(LoopbackTarget::IncludeTree)
+        .ok_or_else(|| "PID do aplicativo não encontrado".to_string())
 }
 
 #[cfg(windows)]
@@ -250,6 +275,33 @@ pub fn clear_share_audio() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shares_desktop_audio_without_the_discord_it_excludes() {
+        // Tela com o Discord aberto: tudo menos a árvore do Discord.
+        assert_eq!(
+            select_loopback_target("screen:1", Some(42), 7, None),
+            Ok(LoopbackTarget::ExcludeTree(42))
+        );
+
+        // Tela sem o Discord: tudo menos o próprio Telinha, pra não devolver o som da live.
+        assert_eq!(
+            select_loopback_target("screen:1", None, 7, None),
+            Ok(LoopbackTarget::ExcludeTree(7))
+        );
+
+        // Janela: só o processo dela, mesmo com o Discord aberto.
+        assert_eq!(
+            select_loopback_target("window:9", Some(42), 7, Some(99)),
+            Ok(LoopbackTarget::IncludeTree(99))
+        );
+
+        // Janela sem pid: não há o que capturar.
+        assert_eq!(
+            select_loopback_target("window:9", Some(42), 7, None),
+            Err("PID do aplicativo não encontrado".to_string())
+        );
+    }
 
     #[test]
     fn drain_chunks_keeps_pcm_bytes() {

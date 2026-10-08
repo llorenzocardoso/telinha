@@ -52,6 +52,42 @@ describe("createIceServerProvider", () => {
     expect(second).toEqual(first);
   });
 
+  it("entrega só STUN e não chama a Cloudflare com a flag desligada", async () => {
+    const fetchImpl = vi.fn();
+    const provider = createIceServerProvider({
+      keyId: "key",
+      apiToken: "token",
+      fetchImpl,
+      isEnabled: () => false,
+    });
+
+    await expect(provider.getIceServers()).resolves.toEqual(PUBLIC_STUN_SERVERS);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("volta a usar TURN quando a flag é religada", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(TURN_RESPONSE), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    let enabled = false;
+    const provider = createIceServerProvider({
+      keyId: "key",
+      apiToken: "token",
+      fetchImpl,
+      isEnabled: () => enabled,
+    });
+
+    await expect(provider.getIceServers()).resolves.toEqual(PUBLIC_STUN_SERVERS);
+    enabled = true;
+    await expect(provider.getIceServers()).resolves.toContainEqual(
+      expect.objectContaining({ username: "user" }),
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("cai para STUN quando a Cloudflare falha", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response("nope", { status: 500 }));
     const provider = createIceServerProvider({

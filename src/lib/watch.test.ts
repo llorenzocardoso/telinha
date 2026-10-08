@@ -5,8 +5,10 @@ import {
   addWatching,
   mosaicColumns,
   nextWatchAction,
+  parseWatchVolumes,
   pruneWatching,
   removeWatching,
+  setWatchVolume,
 } from "./watch";
 
 describe("watch list", () => {
@@ -43,5 +45,29 @@ describe("watch list", () => {
     expect(mosaicColumns(5)).toBe(3);
     expect(mosaicColumns(9)).toBe(3);
     expect(mosaicColumns(10)).toBe(4);
+  });
+});
+
+describe("watch volumes", () => {
+  it("keeps one volume per live without touching the others", () => {
+    const volumes = setWatchVolume({ ana: 80, bia: 60 }, "ana", 20);
+    expect(volumes).toEqual({ bia: 60, ana: 20 });
+    expect(setWatchVolume(volumes, "caio", 140).caio).toBe(100);
+    expect(setWatchVolume(volumes, "caio", -5).caio).toBe(0);
+  });
+
+  it("ignores broken stored volumes and forgets the oldest ones", () => {
+    expect(parseWatchVolumes(null)).toEqual({});
+    expect(parseWatchVolumes("{")).toEqual({});
+    expect(parseWatchVolumes("[1,2]")).toEqual({});
+    expect(parseWatchVolumes('{"ana":35,"bia":"alto","caio":-4}')).toEqual({ ana: 35, caio: 0 });
+
+    let volumes: Record<string, number> = {};
+    for (let index = 0; index < 60; index += 1) {
+      volumes = setWatchVolume(volumes, `pessoa-${index}`, 50);
+    }
+    expect(Object.keys(volumes)).toHaveLength(50);
+    expect(volumes["pessoa-0"]).toBeUndefined();
+    expect(volumes["pessoa-59"]).toBe(50);
   });
 });

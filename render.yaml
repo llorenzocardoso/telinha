@@ -14,8 +14,13 @@ services:
       - key: MIN_PROTOCOL_VERSION
         value: "2"
       - key: MIN_APP_VERSION
-        value: "0.2.0"
+        value: "0.4.0"
       - key: CLOUDFLARE_TURN_KEY_ID
         sync: false
       - key: CLOUDFLARE_TURN_API_TOKEN
+        sync: false
+      # Sem "value": o Blueprint não deve sobrescrever o que estiver no painel.
+      - key: TURN_ENABLED
+        sync: false
+      - key: TURN_MAX_BITRATE_KBPS
         sync: false

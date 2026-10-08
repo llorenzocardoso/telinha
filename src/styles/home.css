@@ -1,0 +1,174 @@
+/* Tela inicial — seção 2.2 do plano. */
+
+.screen.home {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+.home-shell {
+  display: flex;
+  width: 100%;
+  max-width: 560px;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.home-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+}
+
+/* O nome do app em mono: é a marca, não um título qualquer. */
+.home-head h1 {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 30px;
+  font-weight: var(--weight-medium);
+  letter-spacing: -0.02em;
+}
+
+.home-head p {
+  color: var(--muted);
+  font-size: var(--text-md);
+}
+
+.home-name {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.home-name > span {
+  color: var(--faint);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.home-name input,
+.home-join input {
+  height: var(--control-lg);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-3);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--text-md);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.home-join input {
+  font-family: var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.home-name input::placeholder,
+.home-join input::placeholder {
+  color: var(--faint);
+  font-family: var(--font-sans);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.home-name input:focus,
+.home-join input:focus {
+  border-color: var(--text-2);
+  outline: none;
+  background: var(--surface-4);
+}
+
+.home-name input:disabled,
+.home-join input:disabled {
+  opacity: 0.55;
+}
+
+/* Blocos, não linhas: a separação vem das camadas de cinza. */
+.home-cards {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: 1fr 1fr;
+}
+
+.home-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+.home-card.is-primary {
+  border-color: transparent;
+  background: var(--surface-2);
+}
+
+.home-card h2 {
+  color: var(--text);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-medium);
+}
+
+.home-card p {
+  flex: 1;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.home-card .ui-button {
+  margin-top: auto;
+}
+
+.home-join {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.home-hint {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.home-error {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--live);
+  border-radius: var(--radius-md);
+  background: var(--live-bg);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+.home-note {
+  color: var(--faint);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+/* Na janela estreita os dois cartões empilham. */
+@media (max-width: 520px) {
+  .home-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Janela baixa: menos folga entre os blocos. */
+@media (max-height: 540px) {
+  .home-shell {
+    gap: var(--space-4);
+  }
+}

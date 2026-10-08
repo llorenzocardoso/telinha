@@ -33,7 +33,7 @@ test("envia mídia só a quem assiste e libera ao parar", async ({ browser }) =>
 
   await enterName(a, "Ana");
   await a.getByRole("button", { name: "Criar sala" }).click();
-  const code = (await a.locator(".lobby-code strong").textContent())?.trim();
+  const code = (await a.getByTestId("room-code").textContent())?.trim();
   expect(code).toMatch(/^[A-Z0-9]{6}$/);
 
   await joinRoom(b, code!, "Bia", a);
@@ -41,14 +41,14 @@ test("envia mídia só a quem assiste e libera ao parar", async ({ browser }) =>
 
   // ONDEM-01: transmitir não abre conexão com ninguém.
   await startSyntheticShare(a);
-  await expect(b.locator(".live-choice", { hasText: "Ana" })).toBeVisible();
-  await expect(c.locator(".live-choice", { hasText: "Ana" })).toBeVisible();
+  await expect(b.getByTestId("participant").filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" })).toBeVisible();
+  await expect(c.getByTestId("participant").filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" })).toBeVisible();
   await expectPeerCount(a, 0);
   await expectPeerCount(b, 0);
   await expectPeerCount(c, 0);
 
   // ONDEM-02: só quem assiste recebe.
-  await b.locator(".live-choice", { hasText: "Ana" }).click();
+  await b.getByTestId("participant").filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" }).click();
   await expectVideoPlaying(b);
   await expectPeerCount(a, 1);
   await expectPeerCount(b, 1);
@@ -59,12 +59,12 @@ test("envia mídia só a quem assiste e libera ao parar", async ({ browser }) =>
     const seen = { connecting: false };
     (window as unknown as { __seenConnecting: typeof seen }).__seenConnecting = seen;
     new MutationObserver(() => {
-      if (document.querySelector(".watch-pane .video-placeholder")?.textContent?.includes("Conectando…")) {
+      if (document.querySelector(".watch-pane-empty")?.textContent?.includes("Conectando…")) {
         seen.connecting = true;
       }
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
   });
-  await c.locator(".live-choice", { hasText: "Ana" }).click();
+  await c.getByTestId("participant").filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" }).click();
   await expectVideoPlaying(c);
   expect(
     await c.evaluate(

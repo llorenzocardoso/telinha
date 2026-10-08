@@ -5,6 +5,7 @@ import {
   enterRoom,
   fetchIceServers,
   pingHealth,
+  sessionSupports,
   signalingAuthentication,
   signalingUrl,
   type RoomSession,
@@ -13,7 +14,12 @@ import { buildDiagnostics, recordDiagnostic } from "../lib/diagnostics";
 import { buildIceServers } from "../lib/ice";
 import { parseServerSignal, type ClientSignal } from "../lib/protocol";
 import { playStreamStarted, playViewerJoined } from "../lib/sounds";
-import { needsNativeAudioLoopback, startDisplayMediaShare } from "../media/displayShare";
+import { CAMERA_MAX_BITRATE, loadCameraDeviceId, startCameraStream } from "../media/camera";
+import {
+  ShareCancelledError,
+  needsNativeAudioLoopback,
+  startDisplayMediaShare,
+} from "../media/displayShare";
 import { isTauriRuntime } from "../lib/runtime";
 import { createShareAudioPump, createShareAudioTrack } from "../media/shareAudio";
 import { ConnectionState } from "./connectionState";
@@ -25,12 +31,12 @@ import {
 import { nextWatchAction } from "../lib/watch";
 import { PeerManager } from "../room/peerManager";
 import { buildScreenShares } from "../room/screenShares";
-import type { RoomPerson, ScreenShareInfo } from "../room/types";
+import type { CameraFeedInfo, RoomPerson, ScreenShareInfo } from "../room/types";
 import { ShareAudience } from "../room/shareAudience";
 
 export { ConnectionState } from "./connectionState";
 
-export type { RoomPerson, ScreenShareInfo } from "../room/types";
+export type { CameraFeedInfo, RoomPerson, ScreenShareInfo } from "../room/types";
 
 export interface ShareQuality {
   fps: number;
@@ -76,7 +82,11 @@ export function useTelinhaRoom(
   const wsRef = useRef<WebSocket | null>(null);
   const peerManagerRef = useRef<PeerManager | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const remoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraDeviceRef = useRef<string | null>(null);
+  const cameraStartingRef = useRef(false);
+  // Cada par pode mandar duas streams (tela e câmera); a chave interna é o id da stream.
+  const remoteStreamsRef = useRef<Map<string, Map<string, MediaStream>>>(new Map());
   const peopleRef = useRef<Map<string, RoomPerson>>(new Map());
   const unlistensRef = useRef<UnlistenFn[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -86,6 +96,7 @@ export function useTelinhaRoom(
   const preferH264Ref = useRef(true);
   const shareBitrateRef = useRef(VIDEO_MAX_BITRATE);
   const stopShareRef = useRef<() => Promise<void>>(async () => undefined);
+  const stopCameraRef = useRef<() => void>(() => undefined);
   const reseatCountRef = useRef(0);
   const onSessionRefresh = options?.onSessionRefresh;
   const onUpdateRequiredRef = useRef(options?.onUpdateRequired);
@@ -95,10 +106,13 @@ export function useTelinhaRoom(
     ConnectionState.Disconnected,
   );
   const [isSharing, setIsSharing] = useState(false);
+  const [isCameraOn, setIsCameraOn] = useState(false);
   const [screenShares, setScreenShares] = useState<ScreenShareInfo[]>([]);
+  const [cameras, setCameras] = useState<CameraFeedInfo[]>([]);
   const [participants, setParticipants] = useState<RoomPerson[]>([]);
   const [watcherCounts, setWatcherCounts] = useState<Record<string, number>>({});
   const [watcherNames, setWatcherNames] = useState<Record<string, string[]>>({});
+  const [watcherIds, setWatcherIds] = useState<Record<string, string[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [connectionQuality, setConnectionQuality] = useState<ConnectionQuality>("offline");
   const [peerHealth, setPeerHealth] = useState<PeerHealthSample[]>([]);
@@ -117,6 +131,7 @@ export function useTelinhaRoom(
     const audience = audienceRef.current;
     setWatcherCounts({ [localId]: audience.size });
     setWatcherNames({ [localId]: audience.names() });
+    setWatcherIds({ [localId]: audience.ids() });
     if (audience.size !== audienceCountRef.current) {
       audienceCountRef.current = audience.size;
       recordDiagnostic("audience-change", { count: audience.size });
@@ -124,16 +139,35 @@ export function useTelinhaRoom(
   }, []);
 
   const publishShares = useCallback((localId: string) => {
-    setScreenShares(
-      buildScreenShares({
-        localId,
-        people: peopleRef.current.values(),
-        remoteStreams: remoteStreamsRef.current,
-        localStream: localStreamRef.current,
-        localSharing: sharingRef.current,
-      }),
-    );
+    const media = buildScreenShares({
+      localId,
+      people: peopleRef.current.values(),
+      remoteStreams: remoteStreamsRef.current,
+      localStream: localStreamRef.current,
+      localSharing: sharingRef.current,
+      localCamera: cameraStreamRef.current,
+    });
+    setScreenShares(media.shares);
+    setCameras(media.cameras);
   }, []);
+
+  /** Descarta as streams de um par: só a câmera, só a tela, ou todas. */
+  const dropRemoteStreams = useCallback(
+    (peerId: string, kind: "screen" | "camera" | "all") => {
+      const streams = remoteStreamsRef.current.get(peerId);
+      if (!streams) return;
+      if (kind === "all") {
+        remoteStreamsRef.current.delete(peerId);
+        return;
+      }
+      const cameraId = peopleRef.current.get(peerId)?.cameraStreamId;
+      for (const id of [...streams.keys()]) {
+        if ((id === cameraId) === (kind === "camera")) streams.delete(id);
+      }
+      if (streams.size === 0) remoteStreamsRef.current.delete(peerId);
+    },
+    [],
+  );
 
   const sendSignal = useCallback((payload: ClientSignal) => {
     const ws = wsRef.current;
@@ -157,11 +191,15 @@ export function useTelinhaRoom(
   // conjunto "assistindo" (de quem eu recebo) já dizem se ainda há mídia útil no par.
   const reconcilePeer = useCallback(
     async (peerId: string) => {
-      const sending = audienceRef.current.has(peerId);
-      if (!sending && !watchingRef.current.has(peerId)) {
+      const sendingShare = audienceRef.current.has(peerId);
+      // A câmera vai para a sala toda, então ela sozinha já justifica manter o par aberto.
+      const sendingCamera = cameraStreamRef.current !== null;
+      const receiving =
+        watchingRef.current.has(peerId) || Boolean(peopleRef.current.get(peerId)?.hasCamera);
+      if (!sendingShare && !sendingCamera && !receiving) {
         closePeer(peerId);
         if (session) publishShares(session.participantId);
-      } else if (!sending) {
+      } else if (!sendingShare) {
         await peerManagerRef.current?.stopSending(peerId);
       }
     },
@@ -186,6 +224,14 @@ export function useTelinhaRoom(
     [offerToViewer],
   );
 
+  // A câmera não tem audiência: renegocia com todo mundo que está conectado na sala.
+  const offerToEveryone = useCallback(async () => {
+    const peers = [...peopleRef.current.values()]
+      .filter((person) => !person.isLocal && person.connected)
+      .map((person) => person.identity);
+    await Promise.all(peers.map((id) => offerToViewer(id)));
+  }, [offerToViewer]);
+
   const cleanupNativeShare = useCallback(async () => {
     for (const unlisten of unlistensRef.current) {
       unlisten();
@@ -200,10 +246,9 @@ export function useTelinhaRoom(
       }
     }
 
-    if (localStreamRef.current) {
-      for (const track of localStreamRef.current.getTracks()) {
-        track.stop();
-      }
+    const shareTracks = localStreamRef.current?.getTracks() ?? [];
+    for (const track of shareTracks) {
+      track.stop();
     }
     localStreamRef.current = null;
 
@@ -214,10 +259,21 @@ export function useTelinhaRoom(
       audioContextRef.current = null;
     }
 
-    peerManagerRef.current?.removeLocalTracks();
+    // Só as faixas da tela: a câmera, se estiver ligada, continua no ar.
+    peerManagerRef.current?.removeLocalTracks(shareTracks);
 
     sharingRef.current = false;
     setIsSharing(false);
+  }, []);
+
+  const releaseCamera = useCallback(() => {
+    const tracks = cameraStreamRef.current?.getTracks() ?? [];
+    cameraStreamRef.current = null;
+    for (const track of tracks) {
+      track.stop();
+    }
+    peerManagerRef.current?.removeLocalTracks(tracks);
+    setIsCameraOn(false);
   }, []);
 
   useEffect(() => {
@@ -233,13 +289,24 @@ export function useTelinhaRoom(
     const peerManager = new PeerManager({
       localId,
       configuration: roomIceConfig(session),
-      getLocalStream: () => localStreamRef.current,
+      getShareStream: () => localStreamRef.current,
+      getCameraStream: () => cameraStreamRef.current,
       shouldSendTo: (peerId) => audience.has(peerId),
-      getVideoBitrate: () => shareBitrateRef.current,
+      getVideoBitrate: (track) =>
+        cameraStreamRef.current?.getTracks().includes(track)
+          ? CAMERA_MAX_BITRATE
+          : shareBitrateRef.current,
+      getRelayCapKbps: () => session.turnMaxBitrateKbps,
       preferH264: () => preferH264Ref.current,
       send: sendSignal,
       onRemoteStream: (peerId, stream) => {
-        remoteStreamsRef.current.set(peerId, stream);
+        // Uma tela nova substitui a anterior; a câmera convive com ela.
+        if (stream.id !== peopleRef.current.get(peerId)?.cameraStreamId) {
+          dropRemoteStreams(peerId, "screen");
+        }
+        const streams = remoteStreamsRef.current.get(peerId) ?? new Map<string, MediaStream>();
+        streams.set(stream.id, stream);
+        remoteStreamsRef.current.set(peerId, streams);
         publishShares(localId);
       },
       onConnectionState: (peerId, state) => {
@@ -301,6 +368,7 @@ export function useTelinhaRoom(
           identity: localId,
           name: session.displayName,
           isSharing: false,
+          hasCamera: false,
           isLocal: true,
           connected: true,
         },
@@ -379,14 +447,19 @@ export function useTelinhaRoom(
               identity: person.id,
               name: person.name,
               isSharing: person.sharing,
+              hasCamera: person.camera ?? false,
+              cameraStreamId: person.cameraStreamId,
               isLocal: person.id === localId,
               connected: person.connected ?? true,
             },
           ]),
         );
         const local = peopleRef.current.get(localId);
+        const camera = cameraStreamRef.current;
         if (local) {
           local.isSharing = sharingRef.current;
+          local.hasCamera = camera !== null;
+          local.cameraStreamId = camera?.id;
         }
         publishPeople();
         setConnectionState(ConnectionState.Connected);
@@ -404,6 +477,10 @@ export function useTelinhaRoom(
           sendSignal({ type: "share-started" });
           await offerToAudience();
         }
+        if (camera) {
+          sendSignal({ type: "camera-started", streamId: camera.id });
+          await offerToEveryone();
+        }
         return;
       }
 
@@ -412,16 +489,16 @@ export function useTelinhaRoom(
           identity: message.participant.id,
           name: message.participant.name,
           isSharing: message.participant.sharing,
+          hasCamera: message.participant.camera ?? false,
+          cameraStreamId: message.participant.cameraStreamId,
           isLocal: false,
           connected: message.participant.connected ?? true,
         });
         publishPeople();
         publishShares(localId);
-        if (
-          sharingRef.current &&
-          (message.participant.connected ?? true) &&
-          audience.has(message.participant.id)
-        ) {
+        const joinedConnected = message.participant.connected ?? true;
+        if (joinedConnected && (cameraStreamRef.current !== null || audience.has(message.participant.id))) {
+          // A câmera vai para quem acabou de entrar; a tela, só se essa pessoa pediu para assistir.
           await offerToViewer(message.participant.id);
         }
         return;
@@ -433,7 +510,6 @@ export function useTelinhaRoom(
         person.connected = message.connected;
         if (!message.connected) {
           closePeer(message.participantId);
-          remoteStreamsRef.current.delete(message.participantId);
           audience.remove(message.participantId);
           publishWatchers(localId);
           publishShares(localId);
@@ -441,7 +517,7 @@ export function useTelinhaRoom(
           if (watching.has(message.participantId)) {
             sendSignal({ type: "watch-started", to: message.participantId });
           }
-          if (sharingRef.current && audience.has(message.participantId)) {
+          if (cameraStreamRef.current !== null || audience.has(message.participantId)) {
             await offerToViewer(message.participantId);
           }
         }
@@ -476,8 +552,31 @@ export function useTelinhaRoom(
         if (person) {
           person.isSharing = false;
         }
-        remoteStreamsRef.current.delete(message.participantId);
+        // Só a tela sai do ar; a câmera dessa pessoa, se ligada, continua.
+        dropRemoteStreams(message.participantId, "screen");
         watching.delete(message.participantId);
+        publishPeople();
+        publishShares(localId);
+        await reconcilePeer(message.participantId);
+        return;
+      }
+
+      if (message.type === "camera-started" && message.participantId) {
+        const person = peopleRef.current.get(message.participantId);
+        if (!person) return;
+        person.hasCamera = true;
+        person.cameraStreamId = message.streamId;
+        publishPeople();
+        publishShares(localId);
+        return;
+      }
+
+      if (message.type === "camera-stopped" && message.participantId) {
+        const person = peopleRef.current.get(message.participantId);
+        if (!person) return;
+        dropRemoteStreams(message.participantId, "camera");
+        person.hasCamera = false;
+        person.cameraStreamId = undefined;
         publishPeople();
         publishShares(localId);
         await reconcilePeer(message.participantId);
@@ -671,7 +770,9 @@ export function useTelinhaRoom(
       watching.clear();
       setWatcherCounts({});
       setWatcherNames({});
+      setWatcherIds({});
       setScreenShares([]);
+      setCameras([]);
       setParticipants([]);
       setConnectionState(ConnectionState.Disconnected);
       setConnectionQuality("offline");
@@ -681,9 +782,11 @@ export function useTelinhaRoom(
     session,
     closeAllPeers,
     closePeer,
+    dropRemoteStreams,
     onSessionRefresh,
     publishWatchers,
     offerToAudience,
+    offerToEveryone,
     offerToViewer,
     reconcilePeer,
     publishPeople,
@@ -704,6 +807,8 @@ export function useTelinhaRoom(
       void cleanupNativeShare();
     };
   }, [cleanupNativeShare]);
+
+  useEffect(() => releaseCamera, [releaseCamera]);
 
   const startShare = useCallback(
     async (sourceId: string, quality: ShareQuality) => {
@@ -754,8 +859,11 @@ export function useTelinhaRoom(
         sendSignal({ type: "share-started" });
       } catch (error) {
         await cleanupNativeShare();
-        recordDiagnostic("share-start-failed", { message: errorMessage(error) });
-        setError(error instanceof Error ? error.message : "Não foi possível compartilhar");
+        // Fechar o seletor é uma escolha da pessoa, não um erro: nada de aviso na tela.
+        if (!(error instanceof ShareCancelledError)) {
+          recordDiagnostic("share-start-failed", { message: errorMessage(error) });
+          setError(error instanceof Error ? error.message : "Não foi possível compartilhar");
+        }
         throw error;
       }
     },
@@ -807,6 +915,69 @@ export function useTelinhaRoom(
 
   stopShareRef.current = stopShare;
 
+  const cameraSupported = session ? sessionSupports(session, "camera") : false;
+
+  const startCamera = useCallback(async () => {
+    if (!session || !cameraSupported || cameraStreamRef.current || cameraStartingRef.current) {
+      return;
+    }
+    cameraStartingRef.current = true;
+    setError(null);
+    try {
+      const deviceId = loadCameraDeviceId();
+      const stream = await startCameraStream(deviceId);
+      stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+        if (cameraStreamRef.current === stream) {
+          stopCameraRef.current();
+        }
+      });
+      cameraStreamRef.current = stream;
+      cameraDeviceRef.current = deviceId;
+      const local = peopleRef.current.get(session.participantId);
+      if (local) {
+        local.hasCamera = true;
+        local.cameraStreamId = stream.id;
+      }
+      setIsCameraOn(true);
+      publishPeople();
+      publishShares(session.participantId);
+      sendSignal({ type: "camera-started", streamId: stream.id });
+      await offerToEveryone();
+    } catch (cause) {
+      recordDiagnostic("camera-start-failed", { message: errorMessage(cause) });
+      setError(cause instanceof Error ? cause.message : "Não foi possível ligar a câmera.");
+    } finally {
+      cameraStartingRef.current = false;
+    }
+  }, [cameraSupported, offerToEveryone, publishPeople, publishShares, sendSignal, session]);
+
+  const stopCamera = useCallback(() => {
+    if (!cameraStreamRef.current) return;
+    sendSignal({ type: "camera-stopped" });
+    releaseCamera();
+    if (!session) return;
+    const local = peopleRef.current.get(session.participantId);
+    if (local) {
+      local.hasCamera = false;
+      local.cameraStreamId = undefined;
+    }
+    publishPeople();
+    publishShares(session.participantId);
+    // Sem tela nem câmera, os pares que não transmitem nada deixam de ter razão para existir.
+    for (const peerId of peerManagerRef.current?.peerIds() ?? []) {
+      void reconcilePeer(peerId).catch(() => undefined);
+    }
+  }, [publishPeople, publishShares, reconcilePeer, releaseCamera, sendSignal, session]);
+
+  stopCameraRef.current = stopCamera;
+
+  /** Reabre a câmera quando a pessoa troca o dispositivo padrão com a câmera ligada. */
+  const applyCameraDevice = useCallback(async () => {
+    if (!cameraStreamRef.current || cameraDeviceRef.current === loadCameraDeviceId()) return;
+    stopCamera();
+    await startCamera();
+  }, [startCamera, stopCamera]);
+
   const retryConnections = useCallback(async () => {
     setError(null);
     recordDiagnostic("manual-media-retry");
@@ -821,14 +992,21 @@ export function useTelinhaRoom(
   return {
     connectionState,
     isSharing,
+    isCameraOn,
+    cameraSupported,
     screenShares,
+    cameras,
     participants,
     watcherCounts,
     watcherNames,
+    watcherIds,
     connectionQuality,
     copyDiagnostics: buildDiagnostics,
     startShare,
     stopShare,
+    startCamera,
+    stopCamera,
+    applyCameraDevice,
     setWatchingShare,
     retryConnections,
     error,

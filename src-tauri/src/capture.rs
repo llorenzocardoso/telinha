@@ -343,6 +343,9 @@ pub fn set_window_layout(app: AppHandle, layout: String) -> Result<(), String> {
             let _ = window.set_always_on_top(false);
             apply_window_size(&window, 960.0, 540.0, 1440.0, 810.0)?;
         }
+        "lobby-cameras" => {
+            apply_window_size(&window, 640.0, 500.0, 980.0, 700.0)?;
+        }
         _ => {
             apply_window_size(&window, 640.0, 500.0, 720.0, 580.0)?;
         }

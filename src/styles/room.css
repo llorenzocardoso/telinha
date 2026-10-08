@@ -1,0 +1,128 @@
+/* Layout único da sala — seções 2.3 (esperando) e 2.5 (ao vivo). */
+
+.screen.room {
+  position: relative;
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.room-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-4) 0;
+}
+
+.room-logo {
+  display: inline-flex;
+  color: var(--text);
+}
+
+.room-logo svg {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.room-head-left,
+.room-head-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.room-body {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr) 280px;
+  padding: var(--space-4);
+}
+
+.room-stage {
+  display: flex;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-xl);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+
+.room-people {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* A tela compartilhada é a estrela: a prévia ocupa o palco inteiro. */
+.stage-preview {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  /* Vermelho só significa "ao vivo". */
+  border: 2px solid var(--live);
+  border-radius: var(--radius-xl);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.stage-preview .video-tile,
+.stage-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.stage-preview-label {
+  position: absolute;
+  bottom: var(--space-3);
+  left: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--scrim);
+  color: var(--text-2);
+  font-size: var(--text-xs);
+}
+
+.stage-placeholder {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.room-viewers {
+  padding: 0 var(--space-4) var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+.room-banner {
+  padding: var(--space-2) var(--space-4);
+  background: var(--live-bg);
+  color: var(--live);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+/* A lista de pessoas desce para baixo do palco em janela estreita. */
+@media (max-width: 760px) {
+  .room-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .room-people {
+    max-height: 180px;
+  }
+}

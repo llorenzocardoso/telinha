@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { APP_VERSION } from "./protocol";
 import {
   UpdateRequiredError,
   createRoom,
@@ -74,7 +75,7 @@ describe("signalingUrl", () => {
       participantId: "user-1",
       token: "secret",
       protocolVersion: 2,
-      appVersion: "0.3.0",
+      appVersion: APP_VERSION,
     });
   });
 
@@ -101,7 +102,7 @@ describe("signalingUrl", () => {
     });
     const parsed = new URL(url);
     expect(parsed.searchParams.get("protocolVersion")).toBe("2");
-    expect(parsed.searchParams.get("appVersion")).toBe("0.3.0");
+    expect(parsed.searchParams.get("appVersion")).toBe(APP_VERSION);
     expect(parsed.searchParams.has("name")).toBe(false);
   });
 });
@@ -121,7 +122,7 @@ describe("compatibilidade da API", () => {
     expect(JSON.parse(String(init.body))).toMatchObject({
       displayName: "Ana",
       protocolVersion: 2,
-      appVersion: "0.3.0",
+      appVersion: APP_VERSION,
     });
   });
 

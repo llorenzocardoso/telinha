@@ -1,5 +1,6 @@
 import type { ClientSignal } from "../lib/protocol";
 import type { PeerHealthSample } from "./connectionQuality";
+import { isRelayRoute, videoBitrateFor } from "./relay";
 
 const AUDIO_MAX_BITRATE = 320_000;
 
@@ -16,6 +17,8 @@ interface PeerEntry {
   mediaRecoveryAt?: number;
   mediaFailureReported: boolean;
   forceVp8: boolean;
+  /** Última rota conhecida; mudar de direta para relay reaplica o teto de bitrate. */
+  relayRoute: boolean;
   lastMediaStatus?: MediaDeliveryStatus;
   localIceCandidates: number;
   remoteIceCandidates: number;
@@ -33,9 +36,14 @@ export type MediaDeliveryStatus =
 interface PeerManagerOptions {
   localId: string;
   configuration: RTCConfiguration;
-  getLocalStream: () => MediaStream | null;
+  /** A tela compartilhada, quando há uma. Só vai para quem pediu para assistir. */
+  getShareStream: () => MediaStream | null;
+  /** A câmera, quando ligada. Vai para todo mundo na sala, independente de audiência. */
+  getCameraStream: () => MediaStream | null;
   shouldSendTo: (peerId: string) => boolean;
-  getVideoBitrate: () => number;
+  getVideoBitrate: (track: MediaStreamTrack) => number;
+  /** Teto de vídeo em kbps quando a rota é relay; null significa sem limite. */
+  getRelayCapKbps?: () => number | null | undefined;
   preferH264: () => boolean;
   send: (message: ClientSignal) => void;
   onRemoteStream: (peerId: string, stream: MediaStream) => void;
@@ -73,9 +81,11 @@ export class PeerManager {
     if (!entry) return;
     await this.enqueue(entry, async () => {
       const { connection } = entry;
+      // Quem para de assistir deixa de receber a tela, mas a câmera continua indo para a sala.
+      const shareTracks = new Set(this.options.getShareStream()?.getTracks() ?? []);
       let removed = false;
       for (const sender of connection.getSenders()) {
-        if (!sender.track) continue;
+        if (!sender.track || !shareTracks.has(sender.track)) continue;
         try {
           connection.removeTrack(sender);
           removed = true;
@@ -163,10 +173,13 @@ export class PeerManager {
     }
   }
 
-  removeLocalTracks(): void {
+  /** Sem argumento remove tudo; com uma lista remove só aquelas faixas (tela ou câmera). */
+  removeLocalTracks(tracks?: readonly MediaStreamTrack[]): void {
+    const wanted = tracks ? new Set(tracks) : null;
     for (const { connection } of this.peers.values()) {
       for (const sender of connection.getSenders()) {
         if (!sender.track) continue;
+        if (wanted && !wanted.has(sender.track)) continue;
         try {
           connection.removeTrack(sender);
         } catch {
@@ -223,11 +236,20 @@ export class PeerManager {
         sample.remoteSrflxCandidates = entry.remoteCandidateTypes.srflx ?? 0;
         sample.remoteRelayCandidates = entry.remoteCandidateTypes.relay ?? 0;
         sample.iceTransportPolicy = entry.connection.getConfiguration?.().iceTransportPolicy ?? "all";
+        await this.trackRelayRoute(entry, sample);
         this.evaluateMedia(peerId, entry, sample);
         return sample;
       }),
     );
     return samples.filter((sample): sample is PeerHealthSample => sample !== null);
+  }
+
+  /** Só reaplica o bitrate quando a rota realmente troca de direta para relay, ou o contrário. */
+  private async trackRelayRoute(entry: PeerEntry, sample: PeerHealthSample): Promise<void> {
+    const relay = isRelayRoute(sample);
+    if (relay === entry.relayRoute) return;
+    entry.relayRoute = relay;
+    await this.applyBitrate(entry);
   }
 
   private ensure(peerId: string): PeerEntry {
@@ -253,6 +275,7 @@ export class PeerManager {
       iceRestarted: false,
       mediaFailureReported: false,
       forceVp8: false,
+      relayRoute: false,
       localIceCandidates: 0,
       remoteIceCandidates: 0,
       localCandidateTypes: {},
@@ -302,10 +325,17 @@ export class PeerManager {
   }
 
   private syncLocalTracks(peerId: string, peer: RTCPeerConnection, forceVp8: boolean): void {
-    const stream = this.options.getLocalStream();
-    if (!stream || !this.options.shouldSendTo(peerId)) return;
-    for (const track of stream.getTracks()) {
-      if (!peer.getSenders().some((sender) => sender.track === track)) peer.addTrack(track, stream);
+    // A tela só vai para quem pediu para assistir; a câmera vai para a sala toda.
+    const share = this.options.shouldSendTo(peerId) ? this.options.getShareStream() : null;
+    const camera = this.options.getCameraStream();
+    if (!share && !camera) return;
+    for (const stream of [share, camera]) {
+      if (!stream) continue;
+      for (const track of stream.getTracks()) {
+        if (!peer.getSenders().some((sender) => sender.track === track)) {
+          peer.addTrack(track, stream);
+        }
+      }
     }
     preferVideoCodecs(peer, forceVp8 ? false : this.options.preferH264());
   }
@@ -340,9 +370,17 @@ export class PeerManager {
     const peer = entry.connection;
     preferVideoCodecs(peer, entry.forceVp8 ? false : this.options.preferH264());
     for (const sender of peer.getSenders()) {
-      const kind = sender.track?.kind;
-      if (kind !== "video" && kind !== "audio") continue;
-      const maxBitrate = kind === "video" ? this.options.getVideoBitrate() : AUDIO_MAX_BITRATE;
+      const track = sender.track;
+      const kind = track?.kind;
+      if (!track || (kind !== "video" && kind !== "audio")) continue;
+      const maxBitrate =
+        kind === "video"
+          ? videoBitrateFor(
+              this.options.getVideoBitrate(track),
+              this.options.getRelayCapKbps?.(),
+              entry.relayRoute,
+            )
+          : AUDIO_MAX_BITRATE;
       const params = sender.getParameters();
       params.degradationPreference = "maintain-framerate";
       const encoding = { maxBitrate, ...(kind === "video" ? { priority: "high" as const } : {}) };

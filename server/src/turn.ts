@@ -10,6 +10,8 @@ export interface TurnProviderOptions {
   ttlSeconds?: number;
   fetchImpl?: typeof fetch;
   now?: () => number;
+  /** Lido a cada chamada: desligado, nem toca na Cloudflare. */
+  isEnabled?: () => boolean;
 }
 
 export const PUBLIC_STUN_SERVERS: IceServer[] = [
@@ -19,7 +21,7 @@ export const PUBLIC_STUN_SERVERS: IceServer[] = [
 ];
 
 const CLOUDFLARE_ENDPOINT = "https://rtc.live.cloudflare.com/v1/turn/keys";
-const DEFAULT_TTL_SECONDS = 86_400;
+const DEFAULT_TTL_SECONDS = 3_600;
 const REFRESH_MARGIN_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 4_000;
 
@@ -27,6 +29,7 @@ export function createIceServerProvider(options: TurnProviderOptions = {}) {
   let cached: { servers: IceServer[]; refreshAt: number } | null = null;
 
   async function getIceServers(): Promise<IceServer[]> {
+    if (options.isEnabled && !options.isEnabled()) return PUBLIC_STUN_SERVERS;
     const keyId = options.keyId?.trim();
     const apiToken = options.apiToken?.trim();
     if (!keyId || !apiToken) return PUBLIC_STUN_SERVERS;
