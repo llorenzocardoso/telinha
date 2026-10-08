@@ -113,6 +113,9 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
       </section>
 
       <section className="share-field">
+        <header>
+          <strong>Resolução</strong>
+        </header>
         <SegmentedControl
           label="Resolução"
           value={choice.height}
@@ -122,6 +125,9 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
       </section>
 
       <section className="share-field">
+        <header>
+          <strong>Taxa de quadros</strong>
+        </header>
         <SegmentedControl
           label="Taxa de quadros"
           value={choice.fps}

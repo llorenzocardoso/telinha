@@ -14,7 +14,7 @@ services:
       - key: MIN_PROTOCOL_VERSION
         value: "2"
       - key: MIN_APP_VERSION
-        value: "0.2.0"
+        value: "0.4.0"
       - key: CLOUDFLARE_TURN_KEY_ID
         sync: false
       - key: CLOUDFLARE_TURN_API_TOKEN

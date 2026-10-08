@@ -756,7 +756,6 @@ export function RoomScreen({
             <BellOff aria-hidden="true" strokeWidth={1.8} />
           )
         }
-        active={roomSounds}
         onClick={toggleRoomSounds}
       />
       <IconButton

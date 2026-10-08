@@ -28,9 +28,11 @@ O Telinha cria salas temporárias por código para compartilhar e assistir telas
 - salas temporárias com código de seis caracteres;
 - entrada sem cadastro, usando apenas um nome;
 - compartilhamento de tela com captura e codificação pelo Chromium;
-- áudio do sistema por loopback nativo no app Windows;
+- resolução e taxa de quadros manuais (720p a 1440p ou Original, 15, 30 ou 60 fps);
+- áudio do sistema por loopback nativo no app Windows, com ou sem o Discord aberto;
 - câmera opcional, junto ou separada da tela, com escolha da câmera padrão;
-- mais de uma transmissão simultânea, com visualização em grade;
+- mais de uma transmissão simultânea, lado a lado, com volume separado por live;
+- link de convite `https` clicável em qualquer chat, além do código da sala;
 - reconexão automática e recuperação de sessões recentes;
 - indicadores de qualidade da conexão e diagnóstico local sanitizado;
 - atalhos globais, bandeja do sistema e deep links.
@@ -58,6 +60,15 @@ O servidor de sinalização não recebe o conteúdo da tela. Quando uma conexão
 3. Instale e abra o Telinha no Windows.
 
 O projeto ainda está em desenvolvimento ativo. Caso não exista uma release pública, use as instruções de desenvolvimento abaixo.
+
+### Aviso do Windows na instalação
+
+O instalador não é assinado, então o SmartScreen pode avisar que o aplicativo não é reconhecido.
+Para seguir, clique em **Mais informações** e depois em **Executar assim mesmo**.
+
+Baixe sempre pela página de [Releases](https://github.com/llorenzocardoso/telinha/releases) deste
+repositório. O código e o workflow que gera o instalador são públicos, então é possível conferir
+exatamente o que foi empacotado. A assinatura de código fica para uma versão futura.
 
 ## Desenvolvimento local
 
@@ -150,11 +161,17 @@ O CI executa lint, testes e builds de frontend e servidor, o fluxo E2E e a forma
 ## Estrutura do projeto
 
 ```text
-src/          interface React, WebRTC e gerenciamento das salas
-server/       servidor HTTP e WebSocket de sinalização
-src-tauri/    shell desktop, captura de áudio e integrações do Windows
-e2e/          fluxo automatizado com Playwright e mídia sintética
-.github/      CI e geração dos instaladores Windows
+src/
+  components/ui/  componentes base do design system
+  styles/         tokens do tema e CSS por tela
+  assets/fonts/   Geist e JetBrains Mono embutidas (a CSP é font-src 'self')
+  media/          captura de tela, câmera e qualidade da transmissão
+  room/           WebRTC, participantes e qualidade da conexão
+  screens/        telas (inicial, sala e assistindo)
+server/           servidor HTTP e WebSocket de sinalização
+src-tauri/        shell desktop, captura de áudio e integrações do Windows
+e2e/              fluxo automatizado com Playwright e mídia sintética
+.github/          CI e geração dos instaladores Windows
 ```
 
 ### Stack

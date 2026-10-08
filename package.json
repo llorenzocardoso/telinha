@@ -1,7 +1,7 @@
 {
   "name": "telinha",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Compartilhamento de tela P2P para Windows, sem conta e sem complicação.",
   "author": "llorenzocardoso",
   "license": "MIT",
