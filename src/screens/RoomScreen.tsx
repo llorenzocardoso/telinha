@@ -365,13 +365,16 @@ export function RoomScreen({
       <div
         className={`screen room-screen watching ${watchFullscreen ? "watching-full" : "watching-window"} ${multiWatch ? "watching-mosaic" : ""} ${chromeVisible ? "chrome-on" : "chrome-off"}`}
       >
-        {watchingShares.map((share) => (
-          <WatchAudio
-            key={share.participantIdentity}
-            stream={share.stream}
-            volume={volume}
-          />
-        ))}
+        {watchingShares.map(
+          (share) =>
+            share.stream && (
+              <WatchAudio
+                key={share.participantIdentity}
+                stream={share.stream}
+                volume={volume}
+              />
+            ),
+        )}
         <header className="watch-chrome top">
           <div className="watch-heading">
             <div className="watch-live-title">
@@ -402,7 +405,13 @@ export function RoomScreen({
         >
           {watchingShares.map((share) => (
             <div key={share.participantIdentity} className="watch-pane">
-              <VideoTile stream={share.stream} active />
+              {share.stream ? (
+                <VideoTile stream={share.stream} active />
+              ) : (
+                <div className="video-placeholder">
+                  <p>Conectando…</p>
+                </div>
+              )}
               {multiWatch && <span className="watch-pane-name">{share.participantName}</span>}
               {multiWatch && (
                 <div className="watch-pane-actions">
@@ -505,7 +514,7 @@ export function RoomScreen({
         </header>
 
         <div className="host-preview">
-          {localShare ? (
+          {localShare?.stream ? (
             <>
               <VideoTile stream={localShare.stream} active />
               <span className="host-preview-label">Prévia da sua transmissão</span>

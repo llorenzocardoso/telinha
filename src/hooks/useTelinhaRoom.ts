@@ -22,23 +22,15 @@ import {
   type ConnectionQuality,
   type PeerHealthSample,
 } from "../room/connectionQuality";
+import { nextWatchAction } from "../lib/watch";
 import { PeerManager } from "../room/peerManager";
+import { buildScreenShares } from "../room/screenShares";
+import type { RoomPerson, ScreenShareInfo } from "../room/types";
+import { ShareAudience } from "../room/shareAudience";
 
 export { ConnectionState } from "./connectionState";
 
-export interface ScreenShareInfo {
-  participantIdentity: string;
-  participantName: string;
-  stream: MediaStream;
-}
-
-export interface RoomPerson {
-  identity: string;
-  name: string;
-  isSharing: boolean;
-  isLocal: boolean;
-  connected: boolean;
-}
+export type { RoomPerson, ScreenShareInfo } from "../room/types";
 
 export interface ShareQuality {
   fps: number;
@@ -68,6 +60,8 @@ const MEDIA_STALLED_NETWORK =
   "A rede não entregou o vídeo. Tente novamente; algumas redes exigem um servidor TURN.";
 const MEDIA_STALLED_CODEC =
   "O vídeo chegou, mas não pôde ser decodificado. Tente novamente ou use uma qualidade menor.";
+const WATCH_FAILED_MESSAGE = "A live não chegou. Tente assistir de novo.";
+const WATCH_CHECK_MS = 1_000;
 const SIGNAL_PING_MS = 20_000;
 const HEALTH_PING_MS = 120_000;
 const MAX_RESEATS = 6;
@@ -108,41 +102,37 @@ export function useTelinhaRoom(
   const [error, setError] = useState<string | null>(null);
   const [connectionQuality, setConnectionQuality] = useState<ConnectionQuality>("offline");
   const [peerHealth, setPeerHealth] = useState<PeerHealthSample[]>([]);
-  const watchersRef = useRef<Map<string, Map<string, string>>>(new Map());
+  const audienceRef = useRef(new ShareAudience());
+  const audienceCountRef = useRef(0);
+  const watchingRef = useRef<Set<string>>(new Set());
+  const watchWaitRef = useRef<Map<string, { since: number; resent: boolean; failed: boolean }>>(
+    new Map(),
+  );
 
   const publishPeople = useCallback(() => {
     setParticipants([...peopleRef.current.values()]);
   }, []);
 
-  const publishWatchers = useCallback(() => {
-    const counts: Record<string, number> = {};
-    const names: Record<string, string[]> = {};
-    for (const [shareId, watchers] of watchersRef.current) {
-      counts[shareId] = watchers.size;
-      names[shareId] = [...watchers.values()];
+  const publishWatchers = useCallback((localId: string) => {
+    const audience = audienceRef.current;
+    setWatcherCounts({ [localId]: audience.size });
+    setWatcherNames({ [localId]: audience.names() });
+    if (audience.size !== audienceCountRef.current) {
+      audienceCountRef.current = audience.size;
+      recordDiagnostic("audience-change", { count: audience.size });
     }
-    setWatcherCounts(counts);
-    setWatcherNames(names);
   }, []);
 
-  const publishShares = useCallback((localId: string, localName: string) => {
-    const shares: ScreenShareInfo[] = [];
-    if (localStreamRef.current && sharingRef.current) {
-      shares.push({
-        participantIdentity: localId,
-        participantName: localName,
-        stream: localStreamRef.current,
-      });
-    }
-    for (const [id, stream] of remoteStreamsRef.current) {
-      const person = peopleRef.current.get(id);
-      shares.push({
-        participantIdentity: id,
-        participantName: person?.name ?? id,
-        stream,
-      });
-    }
-    setScreenShares(shares);
+  const publishShares = useCallback((localId: string) => {
+    setScreenShares(
+      buildScreenShares({
+        localId,
+        people: peopleRef.current.values(),
+        remoteStreams: remoteStreamsRef.current,
+        localStream: localStreamRef.current,
+        localSharing: sharingRef.current,
+      }),
+    );
   }, []);
 
   const sendSignal = useCallback((payload: ClientSignal) => {
@@ -161,21 +151,39 @@ export function useTelinhaRoom(
     peerManagerRef.current?.closeAll();
   }, []);
 
-  const offerTo = useCallback(
-    async (peerId: string, _localId: string, _localName: string) => {
-      await peerManagerRef.current?.offer(peerId);
+  // SPEC_DEVIATION: o plano previa PeerManager.closeIfIdle; a conexão é fechada com closePeer.
+  // Reason: a faixa recebida do par segue "live" até a renegociação terminar, então um teste
+  // de ociosidade pela conexão não a fecharia a tempo. A audiência (quem recebe de mim) e o
+  // conjunto "assistindo" (de quem eu recebo) já dizem se ainda há mídia útil no par.
+  const reconcilePeer = useCallback(
+    async (peerId: string) => {
+      const sending = audienceRef.current.has(peerId);
+      if (!sending && !watchingRef.current.has(peerId)) {
+        closePeer(peerId);
+        if (session) publishShares(session.participantId);
+      } else if (!sending) {
+        await peerManagerRef.current?.stopSending(peerId);
+      }
     },
-    [],
+    [closePeer, publishShares, session],
   );
 
-  const offerToEveryone = useCallback(
-    async (localId: string, localName: string) => {
-      const others = [...peopleRef.current.values()].filter(
-        (person) => !person.isLocal && person.connected,
-      );
-      await Promise.all(others.map((person) => offerTo(person.identity, localId, localName)));
+  const offerToViewer = useCallback(async (peerId: string) => {
+    try {
+      await peerManagerRef.current?.offer(peerId);
+    } catch {
+      recordDiagnostic("audience-offer-failed");
+    }
+  }, []);
+
+  const offerToAudience = useCallback(
+    async () => {
+      const viewers = audienceRef.current
+        .ids()
+        .filter((id) => peopleRef.current.get(id)?.connected);
+      await Promise.all(viewers.map((id) => offerToViewer(id)));
     },
-    [offerTo],
+    [offerToViewer],
   );
 
   const cleanupNativeShare = useCallback(async () => {
@@ -219,19 +227,20 @@ export function useTelinhaRoom(
 
     let closed = false;
     const localId = session.participantId;
-    const localName = session.displayName;
     const remoteStreams = remoteStreamsRef.current;
-    const watchers = watchersRef.current;
+    const audience = audienceRef.current;
+    const watching = watchingRef.current;
     const peerManager = new PeerManager({
       localId,
       configuration: roomIceConfig(session),
       getLocalStream: () => localStreamRef.current,
+      shouldSendTo: (peerId) => audience.has(peerId),
       getVideoBitrate: () => shareBitrateRef.current,
       preferH264: () => preferH264Ref.current,
       send: sendSignal,
       onRemoteStream: (peerId, stream) => {
         remoteStreamsRef.current.set(peerId, stream);
-        publishShares(localId, localName);
+        publishShares(localId);
       },
       onConnectionState: (peerId, state) => {
         recordDiagnostic("peer-state", { peerId, state });
@@ -278,6 +287,11 @@ export function useTelinhaRoom(
       onError: (message) => recordDiagnostic("peer-warning", { message }),
     });
     peerManagerRef.current = peerManager;
+    if (E2E_MEDIA) {
+      (window as unknown as { __telinhaDebug?: unknown }).__telinhaDebug = {
+        peerIds: () => peerManager.peerIds(),
+      };
+    }
     setConnectionState(ConnectionState.Connecting);
     setError(null);
     peopleRef.current = new Map([
@@ -285,7 +299,7 @@ export function useTelinhaRoom(
         localId,
         {
           identity: localId,
-          name: localName,
+          name: session.displayName,
           isSharing: false,
           isLocal: true,
           connected: true,
@@ -378,10 +392,17 @@ export function useTelinhaRoom(
         setConnectionState(ConnectionState.Connected);
         setError(null);
         reseatCountRef.current = 0;
-        publishShares(localId, localName);
+        publishShares(localId);
+        for (const sharerId of [...watching]) {
+          if (peopleRef.current.get(sharerId)?.isSharing) {
+            sendSignal({ type: "watch-started", to: sharerId });
+          } else {
+            watching.delete(sharerId);
+          }
+        }
         if (sharingRef.current) {
           sendSignal({ type: "share-started" });
-          await offerToEveryone(localId, localName);
+          await offerToAudience();
         }
         return;
       }
@@ -395,8 +416,13 @@ export function useTelinhaRoom(
           connected: message.participant.connected ?? true,
         });
         publishPeople();
-        if (sharingRef.current && (message.participant.connected ?? true)) {
-          await offerTo(message.participant.id, localId, localName);
+        publishShares(localId);
+        if (
+          sharingRef.current &&
+          (message.participant.connected ?? true) &&
+          audience.has(message.participant.id)
+        ) {
+          await offerToViewer(message.participant.id);
         }
         return;
       }
@@ -408,13 +434,16 @@ export function useTelinhaRoom(
         if (!message.connected) {
           closePeer(message.participantId);
           remoteStreamsRef.current.delete(message.participantId);
-          for (const shareWatchers of watchersRef.current.values()) {
-            shareWatchers.delete(message.participantId);
+          audience.remove(message.participantId);
+          publishWatchers(localId);
+          publishShares(localId);
+        } else {
+          if (watching.has(message.participantId)) {
+            sendSignal({ type: "watch-started", to: message.participantId });
           }
-          publishWatchers();
-          publishShares(localId, localName);
-        } else if (sharingRef.current) {
-          await offerTo(message.participantId, localId, localName);
+          if (sharingRef.current && audience.has(message.participantId)) {
+            await offerToViewer(message.participantId);
+          }
         }
         publishPeople();
         return;
@@ -423,13 +452,11 @@ export function useTelinhaRoom(
       if (message.type === "participant-left" && message.participantId) {
         peopleRef.current.delete(message.participantId);
         closePeer(message.participantId);
-        watchersRef.current.delete(message.participantId);
-        for (const watchers of watchersRef.current.values()) {
-          watchers.delete(message.participantId);
-        }
-        publishWatchers();
+        audience.remove(message.participantId);
+        watchingRef.current.delete(message.participantId);
+        publishWatchers(localId);
         publishPeople();
-        publishShares(localId, localName);
+        publishShares(localId);
         return;
       }
 
@@ -438,6 +465,7 @@ export function useTelinhaRoom(
         if (person) {
           person.isSharing = true;
           publishPeople();
+          publishShares(localId);
         }
         playStreamStarted();
         return;
@@ -449,33 +477,38 @@ export function useTelinhaRoom(
           person.isSharing = false;
         }
         remoteStreamsRef.current.delete(message.participantId);
-        watchersRef.current.delete(message.participantId);
-        if (!sharingRef.current) {
-          closePeer(message.participantId);
-        }
-        publishWatchers();
+        watching.delete(message.participantId);
         publishPeople();
-        publishShares(localId, localName);
+        publishShares(localId);
+        await reconcilePeer(message.participantId);
         return;
       }
 
       if (message.type === "watch-started" && message.from && message.to) {
-        const watchers = watchersRef.current.get(message.to) ?? new Map<string, string>();
-        watchers.set(
-          message.from,
-          message.name ?? peopleRef.current.get(message.from)?.name ?? "Alguém",
-        );
-        watchersRef.current.set(message.to, watchers);
-        publishWatchers();
-        if (message.to === localId && message.from !== localId) {
-          playViewerJoined();
+        const viewer = peopleRef.current.get(message.from);
+        if (
+          message.to !== localId ||
+          message.from === localId ||
+          !sharingRef.current ||
+          !viewer?.connected
+        ) {
+          return;
+        }
+        const added =
+          audience.add(message.from, message.name ?? viewer.name ?? "Alguém") === "added";
+        publishWatchers(localId);
+        if (added) playViewerJoined();
+        if (added || !peerManager.peerIds().includes(message.from)) {
+          await offerToViewer(message.from);
         }
         return;
       }
 
       if (message.type === "watch-stopped" && message.from && message.to) {
-        watchersRef.current.get(message.to)?.delete(message.from);
-        publishWatchers();
+        if (message.to === localId && audience.remove(message.from)) {
+          publishWatchers(localId);
+          await reconcilePeer(message.from);
+        }
         return;
       }
 
@@ -550,6 +583,36 @@ export function useTelinhaRoom(
       void pingHealth().catch(() => undefined);
     }, HEALTH_PING_MS);
     void pingHealth().catch(() => undefined);
+    const watchWaiting = watchWaitRef.current;
+    const watchTimer = window.setInterval(() => {
+      if (watching.size === 0 && watchWaiting.size === 0) return;
+      for (const sharerId of watchWaiting.keys()) {
+        if (!watching.has(sharerId)) watchWaiting.delete(sharerId);
+      }
+      for (const sharerId of watching) {
+        const hasStream = remoteStreamsRef.current.has(sharerId);
+        const state = watchWaiting.get(sharerId) ?? {
+          since: Date.now(),
+          resent: false,
+          failed: false,
+        };
+        const action = nextWatchAction(Date.now() - state.since, state.resent, hasStream);
+        if (action === "idle") {
+          if (watchWaiting.delete(sharerId)) {
+            setError((current) => (current === WATCH_FAILED_MESSAGE ? null : current));
+          }
+          continue;
+        }
+        watchWaiting.set(sharerId, state);
+        if (action === "resend") {
+          state.resent = true;
+          sendSignal({ type: "watch-started", to: sharerId });
+        } else if (action === "fail" && !state.failed) {
+          state.failed = true;
+          setError(WATCH_FAILED_MESSAGE);
+        }
+      }
+    }, WATCH_CHECK_MS);
     const qualityTimer = window.setInterval(() => {
       void peerManager.collectHealth().then((samples) => {
         if (closed) return;
@@ -587,6 +650,9 @@ export function useTelinhaRoom(
       closed = true;
       window.clearInterval(healthTimer);
       window.clearInterval(qualityTimer);
+      window.clearInterval(watchTimer);
+      watchWaiting.clear();
+      if (E2E_MEDIA) delete (window as unknown as { __telinhaDebug?: unknown }).__telinhaDebug;
       if (reconnectTimer != null) {
         window.clearTimeout(reconnectTimer);
       }
@@ -600,7 +666,9 @@ export function useTelinhaRoom(
       wsRef.current = null;
       remoteStreams.clear();
       peopleRef.current.clear();
-      watchers.clear();
+      audience.clear();
+      audienceCountRef.current = 0;
+      watching.clear();
       setWatcherCounts({});
       setWatcherNames({});
       setScreenShares([]);
@@ -613,10 +681,11 @@ export function useTelinhaRoom(
     session,
     closeAllPeers,
     closePeer,
-    offerTo,
     onSessionRefresh,
     publishWatchers,
-    offerToEveryone,
+    offerToAudience,
+    offerToViewer,
+    reconcilePeer,
     publishPeople,
     publishShares,
     sendSignal,
@@ -681,9 +750,8 @@ export function useTelinhaRoom(
         }
         setIsSharing(true);
         publishPeople();
-        publishShares(session.participantId, session.displayName);
+        publishShares(session.participantId);
         sendSignal({ type: "share-started" });
-        await offerToEveryone(session.participantId, session.displayName);
       } catch (error) {
         await cleanupNativeShare();
         recordDiagnostic("share-start-failed", { message: errorMessage(error) });
@@ -693,7 +761,6 @@ export function useTelinhaRoom(
     },
     [
       cleanupNativeShare,
-      offerToEveryone,
       publishPeople,
       publishShares,
       sendSignal,
@@ -704,9 +771,16 @@ export function useTelinhaRoom(
   const setWatchingShare = useCallback(
     (sharerId: string, watching: boolean) => {
       if (!session || sharerId === session.participantId) return;
+      watchWaitRef.current.delete(sharerId);
+      if (watching) {
+        watchingRef.current.add(sharerId);
+      } else {
+        watchingRef.current.delete(sharerId);
+      }
       sendSignal({ type: watching ? "watch-started" : "watch-stopped", to: sharerId });
+      if (!watching) void reconcilePeer(sharerId);
     },
-    [sendSignal, session],
+    [reconcilePeer, sendSignal, session],
   );
 
   const stopShare = useCallback(async () => {
@@ -715,21 +789,21 @@ export function useTelinhaRoom(
       return;
     }
     sendSignal({ type: "share-stopped" });
-    watchersRef.current.delete(session.participantId);
-    publishWatchers();
+    audienceRef.current.clear();
+    publishWatchers(session.participantId);
+    await Promise.all(
+      (peerManagerRef.current?.peerIds() ?? []).map((peerId) =>
+        reconcilePeer(peerId).catch(() => undefined),
+      ),
+    );
     await cleanupNativeShare();
-    for (const [peerId, person] of peopleRef.current) {
-      if (!person.isSharing && !person.isLocal) {
-        closePeer(peerId);
-      }
-    }
     const local = peopleRef.current.get(session.participantId);
     if (local) {
       local.isSharing = false;
     }
     publishPeople();
-    publishShares(session.participantId, session.displayName);
-  }, [cleanupNativeShare, closePeer, publishPeople, publishShares, publishWatchers, sendSignal, session]);
+    publishShares(session.participantId);
+  }, [cleanupNativeShare, publishPeople, publishShares, publishWatchers, reconcilePeer, sendSignal, session]);
 
   stopShareRef.current = stopShare;
 

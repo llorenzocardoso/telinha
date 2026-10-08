@@ -9,6 +9,8 @@ interface PeerEntry {
   makingOffer: boolean;
   ignoreOffer: boolean;
   settingRemoteAnswer: boolean;
+  queue: Promise<void>;
+  renegotiateOnStable: boolean;
   iceRestarted: boolean;
   remoteVideoAt?: number;
   mediaRecoveryAt?: number;
@@ -32,6 +34,7 @@ interface PeerManagerOptions {
   localId: string;
   configuration: RTCConfiguration;
   getLocalStream: () => MediaStream | null;
+  shouldSendTo: (peerId: string) => boolean;
   getVideoBitrate: () => number;
   preferH264: () => boolean;
   send: (message: ClientSignal) => void;
@@ -57,9 +60,45 @@ export class PeerManager {
     this.configuration = options.configuration;
   }
 
-  async offer(peerId: string, iceRestart = false): Promise<void> {
+  offer(peerId: string, iceRestart = false): Promise<void> {
     const entry = this.ensure(peerId);
-    this.syncLocalTracks(entry.connection, entry.forceVp8);
+    return this.enqueue(entry, async () => {
+      this.syncLocalTracks(peerId, entry.connection, entry.forceVp8);
+      await this.negotiate(peerId, entry, iceRestart);
+    });
+  }
+
+  async stopSending(peerId: string): Promise<void> {
+    const entry = this.peers.get(peerId);
+    if (!entry) return;
+    await this.enqueue(entry, async () => {
+      const { connection } = entry;
+      let removed = false;
+      for (const sender of connection.getSenders()) {
+        if (!sender.track) continue;
+        try {
+          connection.removeTrack(sender);
+          removed = true;
+        } catch {
+          // A conexão pode fechar entre getSenders e removeTrack.
+        }
+      }
+      if (!removed) return;
+      if (connection.signalingState === "stable") {
+        await this.negotiate(peerId, entry, false);
+      } else {
+        entry.renegotiateOnStable = true;
+      }
+    });
+  }
+
+  private enqueue(entry: PeerEntry, task: () => Promise<void>): Promise<void> {
+    const run = entry.queue.then(task);
+    entry.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async negotiate(peerId: string, entry: PeerEntry, iceRestart: boolean): Promise<void> {
     entry.makingOffer = true;
     try {
       const offer = await entry.connection.createOffer({ iceRestart });
@@ -92,12 +131,16 @@ export class PeerManager {
     for (const receiver of peer.getReceivers()) markVideoMotion(receiver.track);
 
     if (type === "offer") {
-      this.syncLocalTracks(peer, entry.forceVp8);
+      this.syncLocalTracks(peerId, peer, entry.forceVp8);
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
       if (answer.sdp) this.options.send({ type: "answer", to: peerId, sdp: answer.sdp });
     } else {
       await this.applyBitrate(entry);
+      if (entry.renegotiateOnStable && peer.signalingState === "stable") {
+        entry.renegotiateOnStable = false;
+        await this.enqueue(entry, () => this.negotiate(peerId, entry, false));
+      }
     }
   }
 
@@ -131,6 +174,10 @@ export class PeerManager {
         }
       }
     }
+  }
+
+  peerIds(): string[] {
+    return [...this.peers.keys()];
   }
 
   close(peerId: string): void {
@@ -201,6 +248,8 @@ export class PeerManager {
       makingOffer: false,
       ignoreOffer: false,
       settingRemoteAnswer: false,
+      queue: Promise.resolve(),
+      renegotiateOnStable: false,
       iceRestarted: false,
       mediaFailureReported: false,
       forceVp8: false,
@@ -248,13 +297,13 @@ export class PeerManager {
       const stream = event.streams[0] ?? new MediaStream([event.track]);
       this.options.onRemoteStream(peerId, stream);
     };
-    this.syncLocalTracks(connection, entry.forceVp8);
+    this.syncLocalTracks(peerId, connection, entry.forceVp8);
     return entry;
   }
 
-  private syncLocalTracks(peer: RTCPeerConnection, forceVp8: boolean): void {
+  private syncLocalTracks(peerId: string, peer: RTCPeerConnection, forceVp8: boolean): void {
     const stream = this.options.getLocalStream();
-    if (!stream) return;
+    if (!stream || !this.options.shouldSendTo(peerId)) return;
     for (const track of stream.getTracks()) {
       if (!peer.getSenders().some((sender) => sender.track === track)) peer.addTrack(track, stream);
     }

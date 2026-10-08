@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { addWatching, mosaicColumns, pruneWatching, removeWatching } from "./watch";
+import {
+  WATCH_FAIL_MS,
+  WATCH_RESEND_MS,
+  addWatching,
+  mosaicColumns,
+  nextWatchAction,
+  pruneWatching,
+  removeWatching,
+} from "./watch";
 
 describe("watch list", () => {
   it("adds every live without dropping older ones", () => {
@@ -12,6 +20,19 @@ describe("watch list", () => {
   it("removes and prunes ended lives", () => {
     expect(removeWatching(["a", "b"], "a")).toEqual(["b"]);
     expect(pruneWatching(["a", "b", "c"], ["b", "d"])).toEqual(["b"]);
+  });
+
+  it("decides what to do with a watch request that has no media yet", () => {
+    expect(WATCH_RESEND_MS).toBe(10_000);
+    expect(WATCH_FAIL_MS).toBe(20_000);
+    expect(nextWatchAction(0, false, true)).toBe("idle");
+    expect(nextWatchAction(25_000, true, true)).toBe("idle");
+    expect(nextWatchAction(0, false, false)).toBe("wait");
+    expect(nextWatchAction(9_999, false, false)).toBe("wait");
+    expect(nextWatchAction(10_000, false, false)).toBe("resend");
+    expect(nextWatchAction(10_000, true, false)).toBe("wait");
+    expect(nextWatchAction(19_999, true, false)).toBe("wait");
+    expect(nextWatchAction(20_000, true, false)).toBe("fail");
   });
 
   it("picks a mosaic that fits one to many lives", () => {
