@@ -1,23 +1,36 @@
-import type { ReactNode } from "react";
-import { PhoneOff, Video, VideoOff } from "lucide-react";
+import { Columns2, Maximize2, Minimize2, PhoneOff, ScreenShare, ScreenShareOff, Video, VideoOff, X } from "lucide-react";
+import { Avatar, Dock, IconButton } from "./ui";
 import { VolumeControl } from "./VolumeControl";
 
 export interface StreamVolume {
   id: string;
-  // Só vem preenchido quando há mais de uma transmissão na tela.
+  /** Só vem preenchido quando há mais de uma transmissão na tela. */
   name?: string;
   volume: number;
   onChange: (volume: number) => void;
 }
 
+export interface WatchChoice {
+  id: string;
+  name: string;
+  /** Esta transmissão está na tela agora. */
+  active: boolean;
+}
+
 interface LiveControlsProps {
   volumes: StreamVolume[];
+  /** Transmissões disponíveis, para trocar por avatar lado a lado. */
+  choices: WatchChoice[];
   fullscreen: boolean;
   connected: boolean;
   isSharing: boolean;
   cameraOn: boolean;
   cameraReady: boolean;
   cameraLabel: string;
+  /** Faz sentido só com duas ou mais transmissões. */
+  sideBySide: boolean;
+  onWatchOnly: (id: string) => void;
+  onWatchAll: () => void;
   onToggleFullscreen: () => void;
   onToggleShare: () => void;
   onToggleCamera: () => void;
@@ -26,14 +39,19 @@ interface LiveControlsProps {
   onLockChange: (locked: boolean) => void;
 }
 
+/** A dock flutuante única da tela Assistindo (seção 2.6). */
 export function LiveControls({
   volumes,
+  choices,
   fullscreen,
   connected,
   isSharing,
   cameraOn,
   cameraReady,
   cameraLabel,
+  sideBySide,
+  onWatchOnly,
+  onWatchAll,
   onToggleFullscreen,
   onToggleShare,
   onToggleCamera,
@@ -41,146 +59,96 @@ export function LiveControls({
   onLeaveRoom,
   onLockChange,
 }: LiveControlsProps) {
-  function releaseControls(event: React.FocusEvent<HTMLElement> | React.PointerEvent<HTMLElement>) {
-    if (
-      "relatedTarget" in event &&
-      event.currentTarget.contains(event.relatedTarget as Node | null)
-    ) {
-      return;
-    }
-    onLockChange(false);
-  }
-
   return (
-    <footer
-      className="watch-controls-layer"
-      onPointerEnter={() => onLockChange(true)}
-      onPointerLeave={releaseControls}
-      onFocusCapture={() => onLockChange(true)}
-      onBlurCapture={releaseControls}
-    >
-      <div className="watch-edge-controls watch-audio-controls">
+    <Dock label="Controles da transmissão" variant="floating" onHoldChange={onLockChange}>
+      {choices.length > 1 && (
+        <div className="watch-switcher" role="group" aria-label="Escolher transmissão">
+          {choices.map((choice) => (
+            <button
+              key={choice.id}
+              type="button"
+              className={`watch-switcher-item ${choice.active ? "is-active" : ""}`}
+              aria-label={`Assistir ${choice.name}`}
+              aria-pressed={choice.active}
+              onClick={() => onWatchOnly(choice.id)}
+            >
+              <Avatar name={choice.name} size="sm" live />
+            </button>
+          ))}
+          <IconButton
+            label="Ver lado a lado"
+            icon={<Columns2 aria-hidden="true" strokeWidth={1.8} />}
+            active={sideBySide}
+            onClick={onWatchAll}
+          />
+        </div>
+      )}
+
+      <div className="watch-volumes">
         {volumes.map((item) => (
-          <div key={item.id} className="watch-volume-item">
-            <VolumeControl
-              volume={item.volume}
-              label={item.name ? `Volume de ${item.name}` : undefined}
-              onChange={item.onChange}
-              onInteract={() => onLockChange(true)}
-            />
-            {item.name && <span className="watch-volume-name">{item.name}</span>}
-          </div>
+          <VolumeControl
+            key={item.id}
+            volume={item.volume}
+            label={item.name ? `Volume de ${item.name}` : undefined}
+            onChange={item.onChange}
+            onInteract={() => onLockChange(true)}
+          />
         ))}
       </div>
 
-      <div className="watch-control-dock" aria-label="Controles da transmissão">
-        <ControlButton
-          label={isSharing ? "Parar minha transmissão" : "Transmitir também"}
-          active={isSharing}
-          disabled={!connected}
-          onClick={onToggleShare}
-        >
-          <ScreenShareIcon active={isSharing} />
-        </ControlButton>
-
-        <ControlButton
-          label={cameraLabel}
-          active={cameraOn}
-          disabled={!cameraReady}
-          onClick={onToggleCamera}
-        >
-          {cameraOn ? (
-            <Video aria-hidden="true" strokeWidth={2.2} />
+      <IconButton
+        label={fullscreen ? "Restaurar janela" : "Tela cheia"}
+        icon={
+          fullscreen ? (
+            <Minimize2 aria-hidden="true" strokeWidth={1.8} />
           ) : (
-            <VideoOff aria-hidden="true" strokeWidth={2.2} />
-          )}
-        </ControlButton>
+            <Maximize2 aria-hidden="true" strokeWidth={1.8} />
+          )
+        }
+        onClick={onToggleFullscreen}
+      />
 
-        <ControlButton label="Parar de assistir" onClick={onStopWatching}>
-          <StopWatchingIcon />
-        </ControlButton>
+      <IconButton
+        label={isSharing ? "Parar minha transmissão" : "Transmitir também"}
+        icon={
+          isSharing ? (
+            <ScreenShareOff aria-hidden="true" strokeWidth={1.8} />
+          ) : (
+            <ScreenShare aria-hidden="true" strokeWidth={1.8} />
+          )
+        }
+        active={isSharing}
+        disabled={!connected}
+        onClick={onToggleShare}
+      />
 
-        <ControlButton label="Sair da sala" danger onClick={onLeaveRoom}>
-          <PhoneOff aria-hidden="true" strokeWidth={2.2} />
-        </ControlButton>
-      </div>
+      <IconButton
+        label={cameraLabel}
+        icon={
+          cameraOn ? (
+            <Video aria-hidden="true" strokeWidth={1.8} />
+          ) : (
+            <VideoOff aria-hidden="true" strokeWidth={1.8} />
+          )
+        }
+        active={cameraOn}
+        disabled={!cameraReady}
+        onClick={onToggleCamera}
+      />
 
-      <div className="watch-edge-controls watch-viewport-controls">
-        <ControlButton
-          label={fullscreen ? "Restaurar janela" : "Tela cheia"}
-          onClick={onToggleFullscreen}
-        >
-          <FullscreenIcon restore={fullscreen} />
-        </ControlButton>
-      </div>
-    </footer>
-  );
-}
+      {/* Fora do mockup, mas sem isto a função se perde; o Esc continua valendo. */}
+      <IconButton
+        label="Parar de assistir"
+        icon={<X aria-hidden="true" strokeWidth={1.8} />}
+        onClick={onStopWatching}
+      />
 
-function ControlButton({
-  label,
-  children,
-  active,
-  danger,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  children: ReactNode;
-  active?: boolean;
-  danger?: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  const classes = ["watch-control-button", active ? "active" : "", danger ? "danger" : ""]
-    .filter(Boolean)
-    .join(" ");
-
-  return (
-    <button
-      type="button"
-      className={classes}
-      aria-label={label}
-      data-tooltip={label}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
-}
-
-function ScreenShareIcon({ active }: { active: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="3" y="4" width="18" height="13" rx="2" />
-      {active ? (
-        <path d="M8 10h8M8 13h8M8 21h8M12 17v4" />
-      ) : (
-        <path d="M8 21h8M12 17v4M9 11l3-3 3 3M12 8v6" />
-      )}
-    </svg>
-  );
-}
-
-function StopWatchingIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
-      <circle cx="12" cy="12" r="2.7" />
-      <path d="m4 4 16 16" />
-    </svg>
-  );
-}
-
-function FullscreenIcon({ restore }: { restore: boolean }) {
-  return restore ? (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
-    </svg>
-  ) : (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" />
-    </svg>
+      <IconButton
+        label="Sair da sala"
+        icon={<PhoneOff aria-hidden="true" strokeWidth={1.8} />}
+        variant="danger"
+        onClick={onLeaveRoom}
+      />
+    </Dock>
   );
 }

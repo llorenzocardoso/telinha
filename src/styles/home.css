@@ -165,3 +165,10 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Janela baixa: menos folga entre os blocos. */
+@media (max-height: 540px) {
+  .home-shell {
+    gap: var(--space-4);
+  }
+}

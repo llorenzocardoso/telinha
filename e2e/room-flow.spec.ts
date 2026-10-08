@@ -34,7 +34,7 @@ async function resizeAndAssertVideoFits(page: Page) {
   ]) {
     await page.setViewportSize(size);
     await expect.poll(async () =>
-      page.locator(".video-area").evaluate((area) => {
+      page.locator(".watch-video").evaluate((area) => {
         const video = area.querySelector("video");
         if (!video) return false;
         const outer = area.getBoundingClientRect();
@@ -50,7 +50,7 @@ async function resizeAndAssertVideoFits(page: Page) {
       }),
     ).toBe(true);
     await expect.poll(async () =>
-      page.locator(".watch-controls-layer").evaluate((controls) => {
+      page.locator(".ui-dock.is-floating").evaluate((controls) => {
         const rect = controls.getBoundingClientRect();
         return (
           rect.left >= 0 &&
@@ -62,12 +62,18 @@ async function resizeAndAssertVideoFits(page: Page) {
     ).toBe(true);
     await expect.poll(() =>
       page.evaluate(() => {
-        const volume = document.querySelector(".watch-audio-controls")?.getBoundingClientRect();
+        const dock = document.querySelector(".ui-dock.is-floating")?.getBoundingClientRect();
+        const volume = document.querySelector(".watch-volume")?.getBoundingClientRect();
         const fullscreen = document
-          .querySelector(".watch-viewport-controls")
+          .querySelector("[aria-label='Tela cheia'], [aria-label='Restaurar janela']")
           ?.getBoundingClientRect();
-        if (!volume || !fullscreen) return false;
-        return volume.left < fullscreen.left && Math.abs(volume.bottom - fullscreen.bottom) <= 1;
+        if (!dock || !volume || !fullscreen) return false;
+        // O slider encolhe, mas continua à esquerda da tela cheia e dentro da dock.
+        return (
+          volume.left < fullscreen.left &&
+          volume.left >= dock.left - 1 &&
+          fullscreen.right <= dock.right + 1
+        );
       }),
     ).toBe(true);
   }
@@ -143,9 +149,9 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
     c.getByTestId("participant").getByRole("button", { name: "Assistir" }),
   ).toHaveCount(2);
   await c.getByRole("button", { name: "Ver lado a lado" }).click();
-  await expect(c.locator(".video-area video")).toHaveCount(2);
-  await expect(c.locator(".watching-mosaic")).toBeVisible();
-  await expect(c.getByRole("button", { name: "Ver em grade" })).toHaveAttribute(
+  await expect(c.locator(".watch-video video")).toHaveCount(2);
+  await expect(c.locator(".screen.watch.is-mosaic")).toBeVisible();
+  await expect(c.getByRole("button", { name: "Ver lado a lado" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );

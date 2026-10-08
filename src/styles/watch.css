@@ -1,0 +1,255 @@
+/* Tela Assistindo — seção 2.6. O vídeo ocupa a janela inteira, sem barras fixas. */
+
+.screen.watch {
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.watch-video {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  gap: 2px;
+  place-items: stretch;
+}
+
+.watch-pane {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.watch-pane .video-tile,
+.watch-pane video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.watch-pane-empty {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.watch-pane-name {
+  position: absolute;
+  bottom: var(--space-2);
+  left: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--scrim);
+  color: var(--text-2);
+  font-size: var(--text-xs);
+}
+
+/* Selos flutuantes, que somem junto com os controles. */
+.watch-badges {
+  position: absolute;
+  top: var(--space-4);
+  left: var(--space-4);
+  display: flex;
+  gap: var(--space-2);
+  transition: opacity 0.2s ease;
+}
+
+.watch-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  background: var(--overlay-2);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+.watch-badge.is-code {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+}
+
+.watch-badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--live);
+}
+
+.watch-status {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  transition: opacity 0.2s ease;
+}
+
+.watch-self {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--live-bg);
+  color: var(--live);
+  font-size: var(--text-xs);
+}
+
+/* Os controles somem quando o mouse para e voltam ao mover. */
+.screen.watch.chrome-off .watch-badges,
+.screen.watch.chrome-off .watch-status,
+.screen.watch.chrome-off .ui-dock,
+.screen.watch.chrome-off .camera-strip.overlay {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.screen.watch .ui-dock,
+.screen.watch .camera-strip.overlay {
+  transition: opacity 0.2s ease;
+}
+
+/* ---------- Troca de transmissão por avatar ---------- */
+
+.watch-switcher {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--hairline);
+}
+
+.watch-switcher-item {
+  display: inline-flex;
+  padding: 2px;
+  border: 2px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  cursor: pointer;
+}
+
+.watch-switcher-item:hover {
+  border-color: var(--line);
+}
+
+.watch-switcher-item.is-active {
+  border-color: var(--text);
+}
+
+.watch-switcher-item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* ---------- Volume horizontal dentro da dock ---------- */
+
+.watch-volumes {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.watch-volume {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.watch-volume-btn {
+  display: inline-flex;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.watch-volume-btn:hover {
+  background: var(--surface-4);
+  color: var(--text);
+}
+
+.watch-volume-btn:focus-visible,
+.watch-volume-slider:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.watch-volume-slider {
+  display: flex;
+  min-width: 48px;
+  /* Em janela estreita o slider encolhe em vez de empurrar a dock para fora. */
+  width: clamp(48px, 12vw, 104px);
+  height: var(--control-sm);
+  align-items: center;
+  border-radius: var(--radius-sm);
+}
+
+.watch-volume-rail {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-4);
+  cursor: pointer;
+}
+
+.watch-volume-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--text);
+}
+
+.watch-volume-thumb {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-pill);
+  background: var(--text);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 2px var(--scrim);
+}
+
+/* Em 640px de largura a dock precisa caber inteira. */
+@media (max-width: 680px) {
+  .ui-dock.is-floating {
+    gap: var(--space-1);
+    padding: var(--space-1);
+  }
+
+  .watch-volume-slider {
+    width: 48px;
+  }
+
+  .watch-badges {
+    top: var(--space-2);
+    left: var(--space-2);
+  }
+
+  .watch-status {
+    top: var(--space-2);
+    right: var(--space-2);
+  }
+}

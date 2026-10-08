@@ -20,6 +20,7 @@ import "./styles/tokens.css";
 import "./styles/ui.css";
 import "./styles/home.css";
 import "./styles/room.css";
+import "./styles/watch.css";
 import "./App.css";
 
 const NAME_KEY = "telinha-display-name";

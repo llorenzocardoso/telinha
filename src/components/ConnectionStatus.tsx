@@ -1,16 +1,3 @@
-import {
-  connectionQualityLabel,
-  type ConnectionQuality,
-} from "../room/connectionQuality";
-
-export function ConnectionBadge({ quality }: { quality: ConnectionQuality }) {
-  return (
-    <span className={`connection-quality ${quality}`} role="status">
-      {connectionQualityLabel(quality)}
-    </span>
-  );
-}
-
 export function ErrorNotice({
   error,
   copied,

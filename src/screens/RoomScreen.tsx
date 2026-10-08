@@ -10,7 +10,7 @@ import {
   type ScreenShareInfo,
   type ShareQuality,
 } from "../hooks/useTelinhaRoom";
-import { ConnectionBadge, ErrorNotice } from "../components/ConnectionStatus";
+import { ErrorNotice } from "../components/ConnectionStatus";
 import { areSoundsEnabled, setSoundsEnabled } from "../lib/sounds";
 import {
   addWatching,
@@ -27,7 +27,7 @@ import { VideoTile } from "../components/VideoTile";
 import { LiveControls } from "../components/LiveControls";
 import { RoomLayout } from "../components/RoomLayout";
 import { describeParticipants } from "../room/participants";
-import { Button, Dock, EmptyState, IconButton } from "../components/ui";
+import { Button, ConnectionIndicator, Dock, EmptyState, IconButton } from "../components/ui";
 
 interface RoomScreenProps {
   session: RoomSession;
@@ -549,7 +549,9 @@ export function RoomScreen({
   if (watching) {
     return (
       <div
-        className={`screen room-screen watching ${watchFullscreen ? "watching-full" : "watching-window"} ${multiWatch ? "watching-mosaic" : ""} ${chromeVisible ? "chrome-on" : "chrome-off"}`}
+        className={`screen watch ${watchFullscreen ? "is-full" : "is-window"} ${
+          multiWatch ? "is-mosaic" : ""
+        } ${chromeVisible ? "chrome-on" : "chrome-off"}`}
       >
         {watchingShares.map(
           (share) =>
@@ -561,31 +563,16 @@ export function RoomScreen({
               />
             ),
         )}
-        <header className="watch-chrome top">
-          <div className="watch-heading">
-            <div className="watch-live-title">
-              <span className="watch-live-label"><span />Ao vivo</span>
-              <strong>
-                {multiWatch
-                  ? `${watchingShares.length} transmissões`
-                  : watchingShares[0]?.participantName}
-              </strong>
-            </div>
-            {isSharing && (
-              <div className="self-live-status">
-                Sua tela está ao vivo · {localViewers} assistindo
-              </div>
-            )}
-          </div>
-          <ConnectionBadge quality={connectionQuality} />
-        </header>
 
+        {/* O vídeo ocupa a janela inteira; nada de barra fixa. */}
         <div
-          className={`video-area ${multiWatch ? "mosaic" : ""}`}
+          className="watch-video"
           data-count={watchingShares.length}
           style={
             multiWatch
-              ? { gridTemplateColumns: `repeat(${mosaicColumns(watchingShares.length)}, minmax(0, 1fr))` }
+              ? {
+                  gridTemplateColumns: `repeat(${mosaicColumns(watchingShares.length)}, minmax(0, 1fr))`,
+                }
               : undefined
           }
         >
@@ -594,52 +581,34 @@ export function RoomScreen({
               {share.stream ? (
                 <VideoTile stream={share.stream} active />
               ) : (
-                <div className="video-placeholder">
+                <div className="watch-pane-empty">
                   <p>Conectando…</p>
                 </div>
               )}
-              {multiWatch && <span className="watch-pane-name">{share.participantName}</span>}
               {multiWatch && (
-                <div className="watch-pane-actions">
-                  <button
-                    type="button"
-                    className="watch-pane-close"
-                    onClick={() => stopWatching(share.participantIdentity)}
-                  >
-                    Fechar
-                  </button>
-                </div>
+                <span className="watch-pane-name">{share.participantName}</span>
               )}
             </div>
           ))}
         </div>
 
-        {remoteShares.length > 1 && (
-          <nav className="live-switcher overlay-tabs" aria-label="Escolher transmissão">
-            <span className="live-switcher-label">Ao vivo</span>
-            {remoteShares.map((share) => (
-              <button
-                key={share.participantIdentity}
-                type="button"
-                className={`live-switcher-item ${watchingIds.length === 1 && watchingIds.includes(share.participantIdentity) ? "active" : ""}`}
-                aria-pressed={watchingIds.length === 1 && watchingIds.includes(share.participantIdentity)}
-                onClick={() => watchOnly(share.participantIdentity)}
-              >
-                <span className="live-dot" aria-hidden="true" />
-                {share.participantName}
-              </button>
-            ))}
-            <button
-              type="button"
-              className={`live-switcher-item grid-option ${watchingIds.length > 1 ? "active" : ""}`}
-              aria-pressed={watchingIds.length > 1}
-              onClick={watchAll}
-            >
-              <GridIcon />
-              Ver em grade
-            </button>
-          </nav>
-        )}
+        {/* Dois selos flutuantes: o que está na tela e o código da sala. */}
+        <div className="watch-badges">
+          <span className="watch-badge">
+            <span className="watch-badge-dot" aria-hidden="true" />
+            {multiWatch
+              ? `${watchingShares.length} transmissões`
+              : `Tela de ${watchingShares[0]?.participantName ?? ""}`}
+          </span>
+          <span className="watch-badge is-code">{session.code}</span>
+        </div>
+
+        <div className="watch-status">
+          <ConnectionIndicator quality={connectionQuality} />
+          {isSharing && (
+            <span className="watch-self">Sua tela está ao vivo · {localViewers} assistindo</span>
+          )}
+        </div>
 
         <CameraStrip cameras={cameras} variant="overlay" onOpenSettings={openCameraSettings} />
 
@@ -650,12 +619,20 @@ export function RoomScreen({
             volume: shareVolume(share),
             onChange: (next: number) => changeShareVolume(share, next),
           }))}
+          choices={remoteShares.map((share) => ({
+            id: share.participantIdentity,
+            name: share.participantName,
+            active: watchingIds.includes(share.participantIdentity),
+          }))}
           fullscreen={watchFullscreen}
           connected={connected}
           isSharing={isSharing}
           cameraOn={isCameraOn}
           cameraReady={cameraReady}
           cameraLabel={cameraHint}
+          sideBySide={multiWatch}
+          onWatchOnly={watchOnly}
+          onWatchAll={watchAll}
           onToggleFullscreen={() => setWatchFullscreen((open) => !open)}
           onToggleShare={toggleOwnShare}
           onToggleCamera={toggleCamera}
@@ -825,17 +802,6 @@ export function RoomScreen({
   );
 }
 
-function GridIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="3" y="3" width="7" height="7" rx="1" />
-      <rect x="14" y="3" width="7" height="7" rx="1" />
-      <rect x="3" y="14" width="7" height="7" rx="1" />
-      <rect x="14" y="14" width="7" height="7" rx="1" />
-    </svg>
-  );
-}
-
 function ToastStack({
   toasts,
   onWatch,
@@ -866,7 +832,7 @@ function ToastStack({
   );
 }
 
-function WatchAudio({
+export function WatchAudio({
   stream,
   volume,
 }: {
@@ -878,28 +844,54 @@ function WatchAudio({
   volumeRef.current = volume;
 
   useEffect(() => {
-    const tracks = stream.getAudioTracks();
-    if (tracks.length === 0) return;
-    const element = document.createElement("audio");
-    element.autoplay = true;
-    element.setAttribute("playsinline", "true");
-    element.srcObject = new MediaStream(tracks);
-    element.volume = volumeRef.current / 100;
-    document.body.appendChild(element);
-    elementRef.current = element;
-    return () => {
+    // O ontrack do vídeo chega antes do áudio, com o MESMO objeto MediaStream, então não
+    // basta reagir à identidade da stream: é preciso escutar a faixa que chega depois.
+    let element: HTMLAudioElement | null = null;
+
+    function detach() {
+      if (!element) return;
       element.srcObject = null;
       element.remove();
-      if (elementRef.current === element) {
-        elementRef.current = null;
+      if (elementRef.current === element) elementRef.current = null;
+      element = null;
+    }
+
+    function sync() {
+      const tracks = stream.getAudioTracks();
+      if (tracks.length === 0) {
+        detach();
+        return;
       }
+      if (!element) {
+        element = document.createElement("audio");
+        element.autoplay = true;
+        element.setAttribute("playsinline", "true");
+        document.body.appendChild(element);
+        elementRef.current = element;
+      }
+      element.srcObject = new MediaStream(tracks);
+      element.volume = volumeRef.current / 100;
+      try {
+        // O autoplay já cobre o caso; play() é só o empurrão para quem o ignora.
+        const playing = element.play();
+        if (playing && typeof playing.catch === "function") playing.catch(() => undefined);
+      } catch {
+        // Nem todo ambiente implementa play().
+      }
+    }
+
+    sync();
+    stream.addEventListener("addtrack", sync);
+    stream.addEventListener("removetrack", sync);
+    return () => {
+      stream.removeEventListener("addtrack", sync);
+      stream.removeEventListener("removetrack", sync);
+      detach();
     };
   }, [stream]);
 
   useEffect(() => {
-    if (elementRef.current) {
-      elementRef.current.volume = volume / 100;
-    }
+    if (elementRef.current) elementRef.current.volume = volume / 100;
   }, [volume]);
 
   return null;

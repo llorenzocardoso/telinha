@@ -59,7 +59,7 @@ test("envia mídia só a quem assiste e libera ao parar", async ({ browser }) =>
     const seen = { connecting: false };
     (window as unknown as { __seenConnecting: typeof seen }).__seenConnecting = seen;
     new MutationObserver(() => {
-      if (document.querySelector(".watch-pane .video-placeholder")?.textContent?.includes("Conectando…")) {
+      if (document.querySelector(".watch-pane-empty")?.textContent?.includes("Conectando…")) {
         seen.connecting = true;
       }
     }).observe(document.body, { childList: true, subtree: true, characterData: true });

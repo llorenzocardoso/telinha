@@ -1,12 +1,15 @@
 import { useRef } from "react";
+import { Volume1, Volume2, VolumeX } from "lucide-react";
 
 interface VolumeControlProps {
   volume: number;
+  /** Identifica de qual transmissão é o slider quando há mais de uma na tela. */
   label?: string;
   onChange: (volume: number) => void;
   onInteract?: () => void;
 }
 
+/** Slider horizontal dentro da dock flutuante (seção 2.6). */
 export function VolumeControl({
   volume,
   label = "Volume da transmissão",
@@ -16,15 +19,14 @@ export function VolumeControl({
   const lastVolume = useRef(volume || 80);
   const railRef = useRef<HTMLDivElement>(null);
 
-  if (volume > 0) {
-    lastVolume.current = volume;
-  }
+  if (volume > 0) lastVolume.current = volume;
 
   function setFromPointer(event: React.PointerEvent<HTMLDivElement>) {
     const rail = railRef.current;
     if (!rail) return;
     const rect = rail.getBoundingClientRect();
-    const ratio = (rect.bottom - event.clientY) / rect.height;
+    if (rect.width === 0) return;
+    const ratio = (event.clientX - rect.left) / rect.width;
     onChange(Math.round(Math.min(100, Math.max(0, ratio * 100))));
   }
 
@@ -33,27 +35,21 @@ export function VolumeControl({
     onChange(volume === 0 ? lastVolume.current || 80 : 0);
   }
 
-  function onRailPointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    onInteract?.();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setFromPointer(event);
-  }
-
-  function onRailPointerMove(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.buttons !== 1) return;
-    setFromPointer(event);
-  }
-
   return (
     <div className="watch-volume" onPointerDown={onInteract}>
       <button
         type="button"
         className="watch-volume-btn"
         onClick={toggleMute}
-        aria-label={volume === 0 ? "Ativar som" : "Silenciar"}
-        data-tooltip={volume === 0 ? "Ativar som" : "Volume"}
+        aria-label={volume === 0 ? `Ativar som — ${label}` : `Silenciar — ${label}`}
       >
-        <SpeakerIcon volume={volume} />
+        {volume === 0 ? (
+          <VolumeX aria-hidden="true" strokeWidth={1.8} />
+        ) : volume > 40 ? (
+          <Volume2 aria-hidden="true" strokeWidth={1.8} />
+        ) : (
+          <Volume1 aria-hidden="true" strokeWidth={1.8} />
+        )}
       </button>
       <div
         className="watch-volume-slider"
@@ -64,11 +60,11 @@ export function VolumeControl({
         aria-valuenow={volume}
         tabIndex={0}
         onKeyDown={(event) => {
-          if (event.key === "ArrowUp" || event.key === "ArrowRight") {
+          if (event.key === "ArrowRight" || event.key === "ArrowUp") {
             event.preventDefault();
             onChange(Math.min(100, volume + 5));
           }
-          if (event.key === "ArrowDown" || event.key === "ArrowLeft") {
+          if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
             event.preventDefault();
             onChange(Math.max(0, volume - 5));
           }
@@ -77,55 +73,18 @@ export function VolumeControl({
         <div
           ref={railRef}
           className="watch-volume-rail"
-          onPointerDown={onRailPointerDown}
-          onPointerMove={onRailPointerMove}
+          onPointerDown={(event) => {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            setFromPointer(event);
+          }}
+          onPointerMove={(event) => {
+            if (event.buttons === 1) setFromPointer(event);
+          }}
         >
-          <span className="watch-volume-fill" style={{ height: `${volume}%` }} />
-          <span className="watch-volume-thumb" style={{ bottom: `${volume}%` }} />
+          <span className="watch-volume-fill" style={{ width: `${volume}%` }} />
+          <span className="watch-volume-thumb" style={{ left: `${volume}%` }} />
         </div>
       </div>
     </div>
-  );
-}
-
-function SpeakerIcon({ volume }: { volume: number }) {
-  if (volume === 0) {
-    return (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path
-          fill="currentColor"
-          d="M12 3.5 7.5 8H3.75C3.336 8 3 8.336 3 8.75v6.5c0 .414.336.75.75.75H7.5L12 20.5V3.5Z"
-        />
-        <path
-          fill="currentColor"
-          d="m15.2 10.2 1.4-1.4 1.4 1.4 1.4-1.4 1.4 1.4-1.4 1.4 1.4 1.4-1.4 1.4-1.4-1.4-1.4 1.4-1.4-1.4 1.4-1.4-1.4-1.4Z"
-        />
-      </svg>
-    );
-  }
-
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M12 3.5 7.5 8H3.75C3.336 8 3 8.336 3 8.75v6.5c0 .414.336.75.75.75H7.5L12 20.5V3.5Z"
-      />
-      {volume > 40 && (
-        <path
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          d="M15.2 8.8a5.2 5.2 0 0 1 0 6.4"
-        />
-      )}
-      <path
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        d="M17.6 6.6a8.4 8.4 0 0 1 0 10.8"
-      />
-    </svg>
   );
 }
