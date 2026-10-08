@@ -19,6 +19,7 @@ import {
   parseClientSignal,
   readProtocolVersion,
 } from "./protocol.js";
+import { renderInvitePage } from "./invitePage.js";
 import { createIceServerProvider, type TurnProviderOptions } from "./turn.js";
 
 const SEAT_TTL_MS = 2 * 60 * 1000;
@@ -423,6 +424,16 @@ export function createTelinhaServer(options: TelinhaServerOptions = {}): Telinha
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true, service: "telinha-server" });
+  });
+
+  app.get("/j/:code", (req, res) => {
+    const rawCode = req.params.code;
+    const code = normalizeRoomCode(Array.isArray(rawCode) ? rawCode[0] ?? "" : rawCode ?? "");
+    if (!isValidRoomCode(code)) {
+      res.status(404).type("text/plain").send("Convite inválido.");
+      return;
+    }
+    res.type("html").send(renderInvitePage(code));
   });
 
   app.get("/app-config", (_req, res) => {

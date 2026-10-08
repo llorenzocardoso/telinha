@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ClosePrompt } from "./components/ClosePrompt";
 import { UpdatePrompt } from "./components/UpdatePrompt";
-import { enterRoom, fetchAppConfig, leaveRoomSession, type RoomSession } from "./lib/api";
+import { createRoom, enterRoom, fetchAppConfig, leaveRoomSession, type RoomSession } from "./lib/api";
 import { APP_VERSION } from "./lib/protocol";
 import { decideUpdate, findAvailableUpdate, installAvailableUpdate } from "./lib/updates";
 import { actionFromUrls } from "./lib/deepLink";
@@ -41,7 +41,11 @@ function App() {
   const [updateProgress, setUpdateProgress] = useState<number | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [trayStartRequest, setTrayStartRequest] = useState(false);
   const sessionRef = useRef(session);
+  const isSharingRef = useRef(false);
+  const updateRequiredRef = useRef(false);
+  const trayCreatingRef = useRef(false);
 
   const adoptSession = useCallback((next: RoomSession) => {
     sessionRef.current = next;
@@ -78,8 +82,55 @@ function App() {
   }, [session]);
 
   useEffect(() => {
+    isSharingRef.current = isSharing;
+  }, [isSharing]);
+
+  useEffect(() => {
+    updateRequiredRef.current = Boolean(updatePrompt?.required);
+  }, [updatePrompt]);
+
+  useEffect(() => {
+    void invoke("set_tray_state", { roomActive: Boolean(session), sharing: isSharing }).catch(
+      () => undefined,
+    );
+  }, [session, isSharing]);
+
+  useEffect(() => {
     void flushLeaves();
   }, [flushLeaves]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    listen("tray-start-live", () => {
+      if (isSharingRef.current || updateRequiredRef.current || trayCreatingRef.current) return;
+      if (sessionRef.current) {
+        setTrayStartRequest(true);
+        return;
+      }
+      trayCreatingRef.current = true;
+      setJoinError(null);
+      void flushLeaves()
+        .then(() => createRoom(displayName()))
+        .then((next) => {
+          adoptSession(next);
+          setTrayStartRequest(true);
+        })
+        .catch((err: Error) => setJoinError(err.message))
+        .finally(() => {
+          trayCreatingRef.current = false;
+        });
+    })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [adoptSession, flushLeaves]);
 
   useEffect(() => {
     let cancelled = false;
@@ -327,6 +378,8 @@ function App() {
           onSharingChange={setIsSharing}
           openPicker={pendingShare}
           onPickerOpened={() => setPendingShare(false)}
+          trayStartRequest={trayStartRequest}
+          onTrayStartHandled={() => setTrayStartRequest(false)}
         />
       </div>
     );
