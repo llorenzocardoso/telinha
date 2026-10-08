@@ -7,7 +7,7 @@ export async function enterName(page: Page, name: string) {
 
 export async function startSyntheticShare(page: Page) {
   await page.getByRole("button", { name: /Compartilhar tela|Transmitir também/ }).click();
-  await page.getByRole("button", { name: "Continuar" }).click();
+  await page.getByRole("button", { name: "Escolher janela" }).click();
   await expect(
     page.getByRole("button", { name: /Parar transmissão|Parar minha transmissão/ }),
   ).toBeVisible();

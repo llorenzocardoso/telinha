@@ -677,3 +677,55 @@
   padding: var(--space-4) var(--space-6) var(--space-5);
   border-top: 1px solid var(--line);
 }
+
+/* ---------- Diálogo de compartilhar tela (seção 2.4) ---------- */
+
+.share-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.share-field > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.share-field > header strong {
+  color: var(--text);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+}
+
+.share-field > header span {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.share-presets {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.share-hint,
+.share-note {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.share-note {
+  color: var(--faint);
+  font-size: var(--text-xs);
+}
+
+.share-error {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--live);
+  border-radius: var(--radius-md);
+  background: var(--live-bg);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
