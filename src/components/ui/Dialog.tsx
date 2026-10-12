@@ -18,9 +18,30 @@ interface DialogProps {
   footerClassName?: string;
 }
 
+interface OpenDialog {
+  id: symbol;
+  top: boolean;
+}
+
+/**
+ * Diálogos abertos, de baixo para cima na tela: só o último reage a Esc, Tab e foco.
+ * Os `top` ficam sempre no fim, porque são desenhados acima dos demais.
+ */
+const openDialogs: OpenDialog[] = [];
+
+function registerDialog(entry: OpenDialog): () => void {
+  const firstTop = openDialogs.findIndex((item) => item.top);
+  if (entry.top || firstTop < 0) openDialogs.push(entry);
+  else openDialogs.splice(firstTop, 0, entry);
+  return () => {
+    const index = openDialogs.indexOf(entry);
+    if (index >= 0) openDialogs.splice(index, 1);
+  };
+}
+
+const isTopmost = (id: symbol) => openDialogs[openDialogs.length - 1]?.id === id;
+
 /** Diálogo modal com foco preso e Esc para fechar; rola quando falta altura. */
-/** Diálogos abertos, do mais antigo ao mais novo: só o do topo reage a Esc e Tab. */
-const openDialogs: symbol[] = [];
 
 export function Dialog({
   title,
@@ -41,10 +62,13 @@ export function Dialog({
     [],
   );
 
+  // O registro vem antes do foco inicial, que só vale para o diálogo do topo.
+  useEffect(() => registerDialog({ id: idRef.current, top: Boolean(top) }), [top]);
+
   useEffect(() => {
     restoreRef.current = document.activeElement;
     const first = focusable()[0] ?? panelRef.current;
-    first?.focus();
+    if (isTopmost(idRef.current)) first?.focus();
     const restore = restoreRef.current;
     return () => {
       if (restore instanceof HTMLElement) restore.focus();
@@ -52,17 +76,8 @@ export function Dialog({
   }, [focusable]);
 
   useEffect(() => {
-    const id = idRef.current;
-    openDialogs.push(id);
-    return () => {
-      const index = openDialogs.indexOf(id);
-      if (index >= 0) openDialogs.splice(index, 1);
-    };
-  }, []);
-
-  useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (openDialogs[openDialogs.length - 1] !== idRef.current) return;
+      if (!isTopmost(idRef.current)) return;
       if (event.key === "Escape") {
         event.preventDefault();
         onClose();

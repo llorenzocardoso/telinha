@@ -56,4 +56,24 @@ describe("ClosePrompt", () => {
     expect(h.onCancel).toHaveBeenCalledTimes(1);
     expect(underneath).not.toHaveBeenCalled();
   });
+
+  it("o prompt continua no topo mesmo quando outro diálogo abre depois dele", () => {
+    const underneath = vi.fn();
+    const h = handlers();
+    const { rerender } = render(<ClosePrompt inRoom isSharing={false} {...h} />);
+    // O seletor de telas abre com o prompt de fechar já aberto (pela bandeja, por exemplo).
+    rerender(
+      <>
+        <ClosePrompt inRoom isSharing={false} {...h} />
+        <Dialog title="Compartilhar tela" onClose={underneath}>
+          <button type="button">Escolher</button>
+        </Dialog>
+      </>,
+    );
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(h.onCancel).toHaveBeenCalledTimes(1);
+    expect(underneath).not.toHaveBeenCalled();
+    // O foco não foi roubado pelo diálogo de baixo.
+    expect(document.activeElement).not.toBe(screen.getByRole("button", { name: "Escolher" }));
+  });
 });
