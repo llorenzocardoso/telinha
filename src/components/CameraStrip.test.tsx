@@ -95,6 +95,43 @@ describe("CameraStrip", () => {
     expect(tile("BIA").style.transform).toBe("translate(0px, 0px)");
   });
 
+  it("um clique sem arrastar põe a câmera em foco", () => {
+    const onFocus = vi.fn();
+    render(<CameraStrip cameras={[feed("ana")]} onFocus={onFocus} />);
+    const ana = tile("ANA");
+    fireEvent.pointerDown(ana, { button: 0, clientX: 150, clientY: 150, pointerId: 1 });
+    fireEvent.pointerMove(ana, { clientX: 152, clientY: 151, pointerId: 1 });
+    fireEvent.pointerUp(ana, { pointerId: 1 });
+    expect(onFocus).toHaveBeenCalledWith("ana");
+  });
+
+  it("arrastar não conta como clique", () => {
+    const onFocus = vi.fn();
+    render(<CameraStrip cameras={[feed("ana")]} onFocus={onFocus} />);
+    const ana = tile("ANA");
+    fireEvent.pointerDown(ana, { button: 0, clientX: 150, clientY: 150, pointerId: 1 });
+    fireEvent.pointerMove(ana, { clientX: 190, clientY: 170, pointerId: 1 });
+    fireEvent.pointerUp(ana, { pointerId: 1 });
+    expect(onFocus).not.toHaveBeenCalled();
+  });
+
+  it("marca a câmera em foco para ela ficar maior", () => {
+    render(<CameraStrip cameras={[feed("ana"), feed("bia")]} focusedId="bia" />);
+    expect(tile("BIA").className).toContain("is-focused");
+    expect(tile("ANA").className).not.toContain("is-focused");
+  });
+
+  it("tem um botão de foco para teclado, com aria-pressed", () => {
+    const onFocus = vi.fn();
+    render(<CameraStrip cameras={[feed("ana"), feed("bia")]} focusedId="bia" onFocus={onFocus} />);
+    const ana = screen.getByRole("button", { name: "Ampliar a câmera de ANA" });
+    const bia = screen.getByRole("button", { name: "Reduzir a câmera de BIA" });
+    expect(ana.getAttribute("aria-pressed")).toBe("false");
+    expect(bia.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(ana);
+    expect(onFocus).toHaveBeenCalledWith("ana");
+  });
+
   it("ignora o botão direito e o clique no botão de configurações", () => {
     const onOpenSettings = vi.fn();
     render(<CameraStrip cameras={[feed("me", { isLocal: true })]} onOpenSettings={onOpenSettings} />);

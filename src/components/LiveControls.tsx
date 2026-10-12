@@ -87,12 +87,13 @@ export function LiveControls({
         </>
       )}
 
-      <div className="watch-volumes">
+      <div className={`watch-volumes ${volumes.length > 1 ? "is-multi" : ""}`}>
         {volumes.map((item) => (
           <VolumeControl
             key={item.id}
             volume={item.volume}
             label={item.name ? `Volume de ${item.name}` : undefined}
+            caption={item.name}
             onChange={item.onChange}
             onInteract={() => onLockChange(true)}
           />
@@ -117,7 +118,6 @@ export function LiveControls({
         label={isSharing ? "Parar minha transmissão" : "Transmitir também"}
         icon={<Monitor aria-hidden="true" strokeWidth={1.8} />}
         size="lg"
-        variant="tonal"
         active={isSharing}
         disabled={!connected}
         onClick={onToggleShare}

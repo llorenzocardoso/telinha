@@ -23,7 +23,8 @@
         "alwaysOnTop": false,
         "decorations": true,
         "transparent": false,
-        "center": true
+        "center": true,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --enable-features=AllowWgcWindowCapturer"
       }
     ],
     "security": {

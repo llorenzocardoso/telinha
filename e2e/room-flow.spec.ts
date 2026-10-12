@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { people } from "./helpers";
 
 async function enterName(page: Page, name: string) {
   await page.getByPlaceholder("Como você quer aparecer").fill(name);
@@ -119,24 +120,24 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
   await enterName(b, "Bia");
   await b.getByRole("textbox", { name: "Código ou link do convite" }).fill(code!);
   await b.getByRole("button", { name: "Entrar na sala" }).click();
-  await expect(a.getByText("Bia", { exact: false })).toBeVisible();
+  await expect((await people(a)).filter({ hasText: "Bia" })).toBeVisible();
 
   await enterName(c, "Caio");
   await c.getByRole("textbox", { name: "Código ou link do convite" }).fill(code!);
   await c.getByRole("button", { name: "Entrar na sala" }).click();
-  await expect(a.getByText("Caio", { exact: false })).toBeVisible();
+  await expect((await people(a)).filter({ hasText: "Caio" })).toBeVisible();
 
   await a.getByRole("button", { name: "Ligar câmera", exact: true }).click();
-  await expect(a.locator(".camera-tile.local video")).toHaveCount(1);
+  await expect(a.locator(":is(.camera-tile, .camera-cell).local video")).toHaveCount(1);
   for (const viewer of [b, c]) {
-    const camera = viewer.locator(".camera-tile video");
+    const camera = viewer.locator(":is(.camera-tile, .camera-cell) video");
     await expect(camera).toHaveCount(1);
     await expect(viewer.locator(".camera-tile-name")).toHaveText("Ana");
     await expect.poll(() => camera.evaluate((element) => (element as HTMLVideoElement).currentTime)).toBeGreaterThan(0);
   }
 
   await startSyntheticShare(a);
-  await expect(b.getByTestId("participant").filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" })).toBeVisible();
+  await expect((await people(b)).filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" })).toBeVisible();
   await watchAndAssertFrames(b);
   await resizeAndAssertVideoFits(b);
   await expect(b.getByRole("button", { name: "Transmitir também" })).toBeVisible();
@@ -146,7 +147,7 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
   await expect(b.getByRole("button", { name: "Parar minha transmissão" })).toBeVisible();
 
   await expect(
-    c.getByTestId("participant").getByRole("button", { name: "Assistir" }),
+    (await people(c)).getByRole("button", { name: "Assistir" }),
   ).toHaveCount(2);
   await c.getByRole("button", { name: "Ver lado a lado" }).click();
   await expect(c.locator(".watch-video video")).toHaveCount(2);
@@ -156,8 +157,18 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
     "true",
   );
 
-  await expect(a.getByTestId("participant").filter({ hasText: "Bia" }).getByRole("button", { name: "Assistir" })).toBeVisible();
-  await a.getByTestId("participant").filter({ hasText: "Bia" }).getByRole("button", { name: "Assistir" }).click();
+  // Clicar numa live a deixa em foco, ocupando tudo; clicar de novo volta ao lado a lado.
+  await c.getByRole("button", { name: "Focar na tela de Ana" }).click();
+  await expect(c.locator(".watch-video[data-focused='true']")).toHaveCount(1);
+  await expect(c.locator(".watch-pane:not(.is-hidden)")).toHaveCount(1);
+  // As lives continuam montadas: o vídeo (e o som) da outra não é interrompido.
+  await expect(c.locator(".watch-video video")).toHaveCount(2);
+  await c.getByRole("button", { name: "Voltar ao lado a lado (Ana)" }).click();
+  await expect(c.locator(".watch-video[data-focused='true']")).toHaveCount(0);
+  await expect(c.locator(".watch-pane:not(.is-hidden)")).toHaveCount(2);
+
+  await expect((await people(a)).filter({ hasText: "Bia" }).getByRole("button", { name: "Assistir" })).toBeVisible();
+  await (await people(a)).filter({ hasText: "Bia" }).getByRole("button", { name: "Assistir" }).click();
   await expect(a.getByRole("button", { name: "Parar minha transmissão" })).toBeVisible();
   await a.getByRole("button", { name: "Parar de assistir" }).click();
   await expect(a.getByRole("button", { name: "Parar transmissão" })).toBeVisible();
@@ -167,18 +178,18 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
   await b.getByRole("button", { name: "Parar transmissão" }).click();
   await a.getByRole("button", { name: "Parar transmissão" }).click();
 
-  await expect(b.locator(".camera-tile video")).toHaveCount(1);
+  await expect(b.locator(":is(.camera-tile, .camera-cell) video")).toHaveCount(1);
   await a.getByRole("button", { name: "Desligar câmera", exact: true }).click();
-  await expect(a.locator(".camera-tile")).toHaveCount(0);
-  await expect(b.locator(".camera-tile")).toHaveCount(0);
-  await expect(c.locator(".camera-tile")).toHaveCount(0);
+  await expect(a.locator(":is(.camera-tile, .camera-cell)")).toHaveCount(0);
+  await expect(b.locator(":is(.camera-tile, .camera-cell)")).toHaveCount(0);
+  await expect(c.locator(":is(.camera-tile, .camera-cell)")).toHaveCount(0);
 
   await b.getByRole("button", { name: "Sair da sala" }).click();
   await expect(b.getByRole("button", { name: "Entrar na sala" })).toBeVisible();
   await b.getByRole("textbox", { name: "Código ou link do convite" }).fill(code!);
   await b.getByRole("button", { name: "Entrar na sala" }).click();
-  await expect(a.getByTestId("participant").filter({ hasText: "Bia" })).toHaveCount(1);
-  await expect(a.getByTestId("participant").filter({ hasText: "Reconectando" })).toHaveCount(0);
+  await expect((await people(a)).filter({ hasText: "Bia" })).toHaveCount(1);
+  await expect((await people(a)).filter({ hasText: "Reconectando" })).toHaveCount(0);
 
   await contextA.close();
   await contextB.close();

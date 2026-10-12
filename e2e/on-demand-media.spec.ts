@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { enterName, joinRoom, startSyntheticShare } from "./helpers";
+import { enterName, joinRoom, people, startSyntheticShare } from "./helpers";
 
 function peerIds(page: Page): Promise<string[]> {
   return page.evaluate(
@@ -41,14 +41,14 @@ test("envia mídia só a quem assiste e libera ao parar", async ({ browser }) =>
 
   // ONDEM-01: transmitir não abre conexão com ninguém.
   await startSyntheticShare(a);
-  await expect(b.getByTestId("participant").filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" })).toBeVisible();
-  await expect(c.getByTestId("participant").filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" })).toBeVisible();
+  await expect((await people(b)).filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" })).toBeVisible();
+  await expect((await people(c)).filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" })).toBeVisible();
   await expectPeerCount(a, 0);
   await expectPeerCount(b, 0);
   await expectPeerCount(c, 0);
 
   // ONDEM-02: só quem assiste recebe.
-  await b.getByTestId("participant").filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" }).click();
+  await (await people(b)).filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" }).click();
   await expectVideoPlaying(b);
   await expectPeerCount(a, 1);
   await expectPeerCount(b, 1);
@@ -64,7 +64,7 @@ test("envia mídia só a quem assiste e libera ao parar", async ({ browser }) =>
       }
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
   });
-  await c.getByTestId("participant").filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" }).click();
+  await (await people(c)).filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" }).click();
   await expectVideoPlaying(c);
   expect(
     await c.evaluate(

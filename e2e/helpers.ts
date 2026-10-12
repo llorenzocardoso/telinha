@@ -17,5 +17,17 @@ export async function joinRoom(page: Page, code: string, name: string, host: Pag
   await enterName(page, name);
   await page.getByRole("textbox", { name: "Código ou link do convite" }).fill(code);
   await page.getByRole("button", { name: "Entrar na sala" }).click();
-  await expect(host.getByText(name, { exact: false })).toBeVisible();
+  // Basta a pessoa estar na lista; o cartão recolhido só abre com o mouse em cima.
+  await expect(host.getByTestId("participant").filter({ hasText: name })).toHaveCount(1);
+}
+
+/**
+ * A lista de pessoas começa recolhida num cartão de hover. Fixá-la na lateral com um clique
+ * é mais estável que depender do mouse parado sobre os avatares até chegar em "Assistir".
+ * Idempotente: se a lista já está fixada, só devolve as linhas.
+ */
+export async function people(page: Page) {
+  const pin = page.getByRole("button", { name: "Fixar a lista de pessoas na lateral" });
+  if (await pin.count()) await pin.click();
+  return page.getByTestId("participant");
 }

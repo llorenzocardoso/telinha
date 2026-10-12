@@ -321,53 +321,100 @@ pub fn stop_share_capture() {
     audio::clear_share_audio();
 }
 
+/// A janela estava maximizada antes de entrar em tela cheia? Ao sair, volta maximizada.
+static WAS_MAXIMIZED: AtomicBool = AtomicBool::new(false);
+/// Último layout aplicado: a janela só cresce na troca para o lado a lado, não a cada render.
+static LAST_LAYOUT: Mutex<String> = Mutex::new(String::new());
+
+/// Tamanho do lado a lado: abaixo disso as duas lives ficam espremidas.
+const DUAL_MIN_WIDTH: f64 = 960.0;
+const DUAL_MIN_HEIGHT: f64 = 540.0;
+
 #[tauri::command]
 pub fn set_window_layout(app: AppHandle, layout: String) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "Janela principal não encontrada".to_string())?;
 
+    let changed = {
+        let mut last = LAST_LAYOUT.lock().map_err(|e| e.to_string())?;
+        let changed = *last != layout;
+        *last = layout.clone();
+        changed
+    };
+
     match layout.as_str() {
         "watch" => {
             let _ = window.set_always_on_top(false);
-            window
-                .set_min_size(Some(tauri::LogicalSize::new(800.0, 500.0)))
-                .map_err(|e| e.to_string())?;
-            window.set_fullscreen(true).map_err(|e| e.to_string())?;
-        }
-        "watch-window" => {
-            let _ = window.set_always_on_top(false);
-            apply_window_size(&window, 720.0, 480.0, 1100.0, 700.0)?;
+            if !window.is_fullscreen().unwrap_or(false) {
+                WAS_MAXIMIZED.store(window.is_maximized().unwrap_or(false), Ordering::Relaxed);
+                window
+                    .set_min_size(Some(tauri::LogicalSize::new(800.0, 500.0)))
+                    .map_err(|e| e.to_string())?;
+                window.set_fullscreen(true).map_err(|e| e.to_string())?;
+            }
         }
         "watch-dual" => {
             let _ = window.set_always_on_top(false);
-            apply_window_size(&window, 960.0, 540.0, 1440.0, 810.0)?;
+            leave_fullscreen(&window)?;
+            if changed {
+                grow_to(&window, DUAL_MIN_WIDTH, DUAL_MIN_HEIGHT)?;
+            }
         }
-        "lobby-cameras" => {
-            apply_window_size(&window, 640.0, 500.0, 980.0, 700.0)?;
-        }
+        // Sala, câmeras e uma live só: a janela fica como a pessoa deixou.
         _ => {
-            apply_window_size(&window, 640.0, 500.0, 720.0, 580.0)?;
+            let _ = window.set_always_on_top(false);
+            leave_fullscreen(&window)?;
         }
     }
     Ok(())
 }
 
-fn apply_window_size(
-    window: &tauri::WebviewWindow,
-    min_w: f64,
-    min_h: f64,
-    w: f64,
-    h: f64,
-) -> Result<(), String> {
+/// Só mexe na janela ao sair da tela cheia. set_min_size reaplica o tamanho atual
+/// e desmaximiza/reposiciona a janela, então não pode rodar a cada troca de layout.
+fn leave_fullscreen(window: &tauri::WebviewWindow) -> Result<(), String> {
+    if !window.is_fullscreen().unwrap_or(false) {
+        return Ok(());
+    }
     window.set_fullscreen(false).map_err(|e| e.to_string())?;
-    let _ = window.unmaximize();
     window
-        .set_min_size(Some(tauri::LogicalSize::new(min_w, min_h)))
+        .set_min_size(Some(tauri::LogicalSize::new(640.0, 500.0)))
         .map_err(|e| e.to_string())?;
-    window
-        .set_size(tauri::LogicalSize::new(w, h))
-        .map_err(|e| e.to_string())?;
+    if WAS_MAXIMIZED.swap(false, Ordering::Relaxed) {
+        window.maximize().map_err(|e| e.to_string())?;
+    } else {
+        window
+            .set_size(tauri::LogicalSize::new(720.0, 580.0))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Novo tamanho (largura, altura) quando a janela atual é menor que o desejado.
+/// Só aumenta: nunca encolhe uma dimensão que já é suficiente.
+fn grown_size(current: (f64, f64), wanted: (f64, f64)) -> Option<(f64, f64)> {
+    if current.0 >= wanted.0 && current.1 >= wanted.1 {
+        return None;
+    }
+    Some((current.0.max(wanted.0), current.1.max(wanted.1)))
+}
+
+/// Aumenta a janela até o tamanho desejado, sem encolher, sem tocar em tela cheia ou
+/// maximizada e sem mexer no tamanho mínimo.
+fn grow_to(window: &tauri::WebviewWindow, w: f64, h: f64) -> Result<(), String> {
+    if window.is_fullscreen().unwrap_or(false) || window.is_maximized().unwrap_or(false) {
+        return Ok(());
+    }
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let size = window
+        .inner_size()
+        .map_err(|e| e.to_string())?
+        .to_logical::<f64>(scale);
+    if let Some((width, height)) = grown_size((size.width, size.height), (w, h)) {
+        window
+            .set_size(tauri::LogicalSize::new(width, height))
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -382,5 +429,26 @@ mod tests {
         let bytes = encode_jpeg_bytes(&image, 80).expect("jpeg");
         assert!(bytes.len() > 16);
         assert_eq!(&bytes[..2], &[0xFF, 0xD8]);
+    }
+
+    #[test]
+    fn grown_size_only_grows() {
+        // Já cabe: nada muda, mesmo que seja maior.
+        assert_eq!(grown_size((1200.0, 800.0), (960.0, 540.0)), None);
+        assert_eq!(grown_size((960.0, 540.0), (960.0, 540.0)), None);
+        // Pequena nas duas dimensões: cresce nas duas.
+        assert_eq!(
+            grown_size((720.0, 580.0), (960.0, 540.0)),
+            Some((960.0, 580.0))
+        );
+        assert_eq!(
+            grown_size((700.0, 400.0), (960.0, 540.0)),
+            Some((960.0, 540.0))
+        );
+        // Larga mas baixa: só a altura cresce, a largura não encolhe.
+        assert_eq!(
+            grown_size((1400.0, 400.0), (960.0, 540.0)),
+            Some((1400.0, 540.0))
+        );
     }
 }

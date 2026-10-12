@@ -5,6 +5,8 @@ interface VolumeControlProps {
   volume: number;
   /** Identifica de qual transmissão é o slider quando há mais de uma na tela. */
   label?: string;
+  /** Nome curto mostrado ao lado, para saber de quem é o slider quando há mais de um. */
+  caption?: string;
   onChange: (volume: number) => void;
   onInteract?: () => void;
 }
@@ -13,6 +15,7 @@ interface VolumeControlProps {
 export function VolumeControl({
   volume,
   label = "Volume da transmissão",
+  caption,
   onChange,
   onInteract,
 }: VolumeControlProps) {
@@ -51,6 +54,7 @@ export function VolumeControl({
           <Volume1 aria-hidden="true" strokeWidth={1.8} />
         )}
       </button>
+      {caption && <span className="watch-volume-caption">{caption}</span>}
       <div
         className="watch-volume-slider"
         role="slider"

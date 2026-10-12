@@ -20,7 +20,7 @@ Código em [src-tauri/](../src-tauri/). Crate `telinha` (lib `telinha_lib`), ide
 | `copy_to_clipboard(text)` | Sim | Copia código/diagnóstico |
 | `show_main_window`, `hide_main_window` | Sim | Mostrar/esconder a janela (bandeja, convites) |
 | `quit_app` | Sim | Para a captura e encerra o processo |
-| `set_window_layout(layout)` | Sim | `"home"`, `"watch-window"`, `"watch-dual"`, `"watch"` (tela cheia) |
+| `set_window_layout(layout)` | Sim | `"watch-dual"` (cresce a janela se for pequena), `"watch"` (tela cheia); qualquer outro valor mantém a janela como está |
 | `gpu_encode_info` | Sim | `{available, vendor, name}` |
 | `set_discord_presence(code)` | Sim | Define/limpa a sala exibida no Discord |
 | `start_share_capture(id, fps, maxWidth, includeAudio, includeVideo)` | Sim, só com `includeVideo:false` | Inicia a captura de áudio (e, legado, de vídeo) |
@@ -42,7 +42,10 @@ Código em [src-tauri/](../src-tauri/). Crate `telinha` (lib `telinha_lib`), ide
 
 - Fechar a janela **não** encerra o app: `CloseRequested` é cancelado e o evento `window-close-requested` abre um diálogo (minimizar para a bandeja, sair da sala ou encerrar).
 - Bandeja: "Mostrar Telinha" e "Sair"; clique esquerdo mostra a janela.
-- Layouts (`set_window_layout`): `home` 720×580 (mín. 640×500); `watch-window` 1100×700 (mín. 720×480); `watch-dual` 1440×810 (mín. 960×540); `watch` tela cheia (mín. 800×500).
+- Layouts (`set_window_layout`): a janela **não é redimensionada** ao trocar de tela (sala, câmeras, uma live): ela fica como a pessoa deixou. `set_min_size` reaplica o tamanho atual e desmaximiza/reposiciona a janela, então só é chamado ao sair da tela cheia.
+  - `watch-dual` (lado a lado) só **cresce** a janela, uma vez na troca de layout, até 960×540 quando ela é menor; nunca encolhe, e não mexe em janela maximizada ou em tela cheia.
+  - `watch` é tela cheia (mín. 800×500). Ao sair, a janela volta maximizada se estava maximizada antes; senão, para 720×580 (mín. 640×500).
+- `app.windows[0].additionalBrowserArgs` (`tauri.conf.json`) **substitui** os argumentos padrão do WebView2. Os três `--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection` são os padrões do Tauri e devem ser mantidos; `--enable-features=AllowWgcWindowCapturer` usa a captura moderna do Windows para janelas aparecerem no seletor.
 - Plugin de instância única: abrir o app de novo reaproveita a janela existente e repassa as URLs `telinha:` recebidas.
 
 ## Deep links

@@ -85,3 +85,129 @@
   fill: none;
   stroke: currentColor;
 }
+
+/* Câmera em foco (clique sem arrastar): o quadrado flutuante fica maior. */
+.camera-tile.is-focused {
+  width: clamp(300px, 42vw, 560px);
+}
+
+/* Sem transmissão: as câmeras ocupam o palco inteiro, como numa chamada do Discord. */
+.camera-grid {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  grid-auto-rows: minmax(0, 1fr);
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+.camera-grid.has-focus {
+  display: flex;
+  flex-direction: column;
+}
+
+.camera-grid-main {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.camera-grid-rail {
+  display: flex;
+  flex: 0 0 clamp(84px, 18%, 132px);
+  min-height: 0;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.camera-grid-rail .camera-cell {
+  flex: 0 1 auto;
+  height: 100%;
+  aspect-ratio: 16 / 9;
+}
+
+.camera-cell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s ease;
+}
+
+.camera-cell:hover {
+  border-color: var(--text-2);
+}
+
+.camera-cell .video-tile video {
+  object-fit: cover;
+  pointer-events: none;
+}
+
+/* Em foco a câmera aparece inteira, sem cortar o rosto. */
+.camera-cell.is-focused .video-tile video {
+  object-fit: contain;
+}
+
+.camera-cell.local video {
+  transform: scaleX(-1);
+}
+
+.camera-cell:hover .camera-tile-settings {
+  opacity: 1;
+}
+
+/* Botão de foco: cobre a câmera inteira; o de configurações e o nome ficam por cima. */
+.camera-cell-focus {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.camera-cell-focus:focus-visible {
+  outline: 2px solid var(--text-2);
+  outline-offset: -2px;
+}
+
+.camera-cell .camera-tile-name,
+.camera-cell .camera-tile-settings {
+  z-index: 2;
+}
+
+.camera-cell .camera-tile-name {
+  pointer-events: none;
+}
+
+/* Botão de foco da câmera flutuante: só para teclado; o mouse usa o próprio quadrado. */
+.camera-tile-focus {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  pointer-events: none;
+}
+
+.camera-tile-focus:focus-visible {
+  outline: 2px solid var(--text-2);
+  outline-offset: -2px;
+}
+
+.camera-tile .camera-tile-name,
+.camera-tile .camera-tile-settings {
+  z-index: 2;
+}

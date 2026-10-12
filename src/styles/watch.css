@@ -235,3 +235,72 @@
     right: var(--space-2);
   }
 }
+
+/* Lado a lado: clicar numa live a põe em foco, ocupando a janela inteira. */
+.watch-pane-focus {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.watch-pane-focus:focus-visible {
+  outline: 2px solid var(--text-2);
+  outline-offset: -2px;
+}
+
+/* As outras lives seguem montadas (e com o som); só saem da tela. */
+.watch-pane.is-hidden {
+  display: none;
+}
+
+.watch-pane-focus ~ .video-tile {
+  pointer-events: none;
+}
+
+/* Com mais de uma live, os volumes ficam compactos e com o nome de cada uma, para a dock
+   não crescer em altura nem deixar dúvida de quem é qual slider. */
+.watch-volumes.is-multi {
+  gap: 2px;
+}
+
+.watch-volumes.is-multi .watch-volume-btn {
+  width: 24px;
+  height: 24px;
+}
+
+.watch-volumes.is-multi .watch-volume-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.watch-volumes.is-multi .watch-volume-slider {
+  height: 24px;
+}
+
+.watch-volume-caption {
+  width: 52px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Em janela estreita a dock não tem espaço para os nomes; o rótulo de acessibilidade fica. */
+@media (max-width: 780px) {
+  .watch-volume-caption {
+    display: none;
+  }
+}
+
+/* No lado a lado o canto de baixo fica sob a dock; o nome da live vai para o alto do painel,
+   logo abaixo dos selos. */
+.watch-pane-name {
+  top: calc(var(--space-4) + 44px);
+  bottom: auto;
+}
