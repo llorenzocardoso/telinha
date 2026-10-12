@@ -1,8 +1,8 @@
-import logo from "../assets/telinha-logo.svg";
 import { useEffect, useState, type ReactNode } from "react";
 import { createRoom, enterRoom, isValidRoomCode, type RoomSession } from "../lib/api";
 import { roomCodeFromInput } from "../lib/roomCode";
 import { Button } from "../components/ui";
+import logo from "../assets/telinha-logo.svg";
 
 const NAME_KEY = "telinha-display-name";
 const MAX_NAME_LENGTH = 24;
