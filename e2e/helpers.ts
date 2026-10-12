@@ -22,12 +22,12 @@ export async function joinRoom(page: Page, code: string, name: string, host: Pag
 }
 
 /**
- * A lista de pessoas fica num cartão que abre ao passar o mouse sobre os avatares do
- * cabeçalho; este helper abre o cartão e devolve as linhas.
+ * A lista de pessoas começa recolhida num cartão de hover. Fixá-la na lateral com um clique
+ * é mais estável que depender do mouse parado sobre os avatares até chegar em "Assistir".
+ * Idempotente: se a lista já está fixada, só devolve as linhas.
  */
 export async function people(page: Page) {
-  // Com a lista fixa na lateral não há avatares para passar o mouse.
-  const trigger = page.getByTestId("people-trigger");
-  if (await trigger.count()) await trigger.hover();
+  const pin = page.getByRole("button", { name: "Fixar a lista de pessoas na lateral" });
+  if (await pin.count()) await pin.click();
   return page.getByTestId("participant");
 }
