@@ -22,6 +22,7 @@ import {
 } from "../lib/watch";
 import { ScreenSharePicker } from "../components/ScreenSharePicker";
 import { CameraSettings } from "../components/CameraSettings";
+import { CameraGrid } from "../components/CameraGrid";
 import { CameraStrip } from "../components/CameraStrip";
 import { VideoTile } from "../components/VideoTile";
 import { LiveControls } from "../components/LiveControls";
@@ -80,6 +81,7 @@ export function RoomScreen({
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [cameraSettingsOpen, setCameraSettingsOpen] = useState(false);
+  const [focusedCameraId, setFocusedCameraId] = useState<string | null>(null);
   const [watchingIds, setWatchingIds] = useState<string[]>([]);
   // Volume de cada transmissão nesta sala, por participante.
   const [volumes, setVolumes] = useState<Record<string, number>>({});
@@ -157,6 +159,18 @@ export function RoomScreen({
   const hosting = isSharing && !watching && !pickerOpen;
   const multiWatch = watchingShares.length > 1;
   const hasCameras = cameras.length > 0;
+  // Sem nenhuma transmissão no ar, as câmeras ocupam o palco (grade); com live, flutuam.
+  const cameraStage = hasCameras && !isSharing && remoteShares.length === 0;
+  const toggleCameraFocus = useCallback(
+    (id: string) => setFocusedCameraId((current) => (current === id ? null : id)),
+    [],
+  );
+  // A câmera em foco que saiu da sala deixa de valer.
+  useEffect(() => {
+    if (focusedCameraId && !cameras.some((camera) => camera.participantIdentity === focusedCameraId)) {
+      setFocusedCameraId(null);
+    }
+  }, [cameras, focusedCameraId]);
   const remoteShareKey = remoteShares
     .map((share) => `${share.participantIdentity}\t${share.participantName}`)
     .join("\0");
@@ -621,7 +635,12 @@ export function RoomScreen({
           <RoomCode code={session.code} onCopy={copyRoomCode} />
         </div>
 
-        <CameraStrip cameras={cameras} onOpenSettings={openCameraSettings} />
+        <CameraStrip
+          cameras={cameras}
+          onOpenSettings={openCameraSettings}
+          focusedId={focusedCameraId}
+          onFocus={toggleCameraFocus}
+        />
 
         <LiveControls
           volumes={watchingShares.map((share) => ({
@@ -673,7 +692,14 @@ export function RoomScreen({
     );
   }
 
-  const stage = isSharing ? (
+  const stage = cameraStage ? (
+    <CameraGrid
+      cameras={cameras}
+      focusedId={focusedCameraId}
+      onFocus={toggleCameraFocus}
+      onOpenSettings={openCameraSettings}
+    />
+  ) : isSharing ? (
     <div className="stage-preview" data-testid="live-preview">
       {localShare?.stream ? (
         <VideoTile stream={localShare.stream} active />
@@ -796,7 +822,14 @@ export function RoomScreen({
       dock={dock}
       onWatch={watchOnly}
     >
-      <CameraStrip cameras={cameras} onOpenSettings={openCameraSettings} />
+      {!cameraStage && (
+        <CameraStrip
+          cameras={cameras}
+          onOpenSettings={openCameraSettings}
+          focusedId={focusedCameraId}
+          onFocus={toggleCameraFocus}
+        />
+      )}
       {reconnecting && <p className="room-banner">A conexão caiu. Tentando de novo...</p>}
       {error && (
         <ErrorNotice

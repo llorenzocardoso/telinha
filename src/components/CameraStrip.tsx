@@ -6,7 +6,14 @@ import { VideoTile } from "./VideoTile";
 interface CameraStripProps {
   cameras: CameraFeedInfo[];
   onOpenSettings?: () => void;
+  /** A câmera em foco fica maior. */
+  focusedId?: string | null;
+  /** Chamado por um clique na câmera; arrastar não conta como clique. */
+  onFocus?: (id: string) => void;
 }
+
+/** Quanto o ponteiro pode andar (em px) e ainda contar como clique, não arraste. */
+const CLICK_SLOP = 5;
 
 interface Offset {
   x: number;
@@ -20,7 +27,7 @@ const clamp = (value: number, min: number, max: number) =>
  * As câmeras flutuam sobre a sala e podem ser arrastadas: segure o clique no quadrado e mova.
  * A posição vale enquanto a câmera está no ar e o quadrado nunca sai da janela.
  */
-export function CameraStrip({ cameras, onOpenSettings }: CameraStripProps) {
+export function CameraStrip({ cameras, onOpenSettings, focusedId, onFocus }: CameraStripProps) {
   const [offsets, setOffsets] = useState<Record<string, Offset>>({});
   if (cameras.length === 0) return null;
 
@@ -34,6 +41,8 @@ export function CameraStrip({ cameras, onOpenSettings }: CameraStripProps) {
           onMove={(next) =>
             setOffsets((current) => ({ ...current, [camera.participantIdentity]: next }))
           }
+          focused={camera.participantIdentity === focusedId}
+          onClick={() => onFocus?.(camera.participantIdentity)}
           onOpenSettings={onOpenSettings}
         />
       ))}
@@ -51,15 +60,20 @@ interface DragState {
 function CameraTile({
   camera,
   offset,
+  focused,
   onMove,
+  onClick,
   onOpenSettings,
 }: {
   camera: CameraFeedInfo;
   offset: Offset;
+  focused: boolean;
   onMove: (offset: Offset) => void;
+  onClick: () => void;
   onOpenSettings?: () => void;
 }) {
   const drag = useRef<DragState | null>(null);
+  const moved = useRef(false);
   const [dragging, setDragging] = useState(false);
 
   function onPointerDown(event: React.PointerEvent<HTMLDivElement>) {
@@ -67,6 +81,7 @@ function CameraTile({
     // O botão de configurações continua clicável, sem iniciar o arraste.
     if (event.target instanceof Element && event.target.closest("button")) return;
     event.currentTarget.setPointerCapture(event.pointerId);
+    moved.current = false;
     drag.current = {
       startX: event.clientX,
       startY: event.clientY,
@@ -79,6 +94,12 @@ function CameraTile({
   function onPointerMove(event: React.PointerEvent<HTMLDivElement>) {
     const state = drag.current;
     if (!state) return;
+    if (
+      Math.abs(event.clientX - state.startX) > CLICK_SLOP ||
+      Math.abs(event.clientY - state.startY) > CLICK_SLOP
+    ) {
+      moved.current = true;
+    }
     // Mantém o quadrado inteiro dentro da janela.
     const dx = clamp(
       event.clientX - state.startX,
@@ -98,13 +119,20 @@ function CameraTile({
     setDragging(false);
   }
 
+  function onPointerUp() {
+    // Soltar sem ter arrastado é um clique: põe a câmera em foco.
+    const wasClick = drag.current !== null && !moved.current;
+    endDrag();
+    if (wasClick) onClick();
+  }
+
   return (
     <div
-      className={`camera-tile ${camera.isLocal ? "local" : ""} ${dragging ? "is-dragging" : ""}`}
+      className={`camera-tile ${camera.isLocal ? "local" : ""} ${focused ? "is-focused" : ""} ${dragging ? "is-dragging" : ""}`}
       style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
+      onPointerUp={onPointerUp}
       onPointerCancel={endDrag}
     >
       <VideoTile stream={camera.stream} />
