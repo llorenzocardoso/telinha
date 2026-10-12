@@ -19,3 +19,14 @@ export async function joinRoom(page: Page, code: string, name: string, host: Pag
   await page.getByRole("button", { name: "Entrar na sala" }).click();
   await expect(host.getByText(name, { exact: false })).toBeVisible();
 }
+
+/**
+ * A lista de pessoas fica num cartão que abre ao passar o mouse sobre os avatares do
+ * cabeçalho; este helper abre o cartão e devolve as linhas.
+ */
+export async function people(page: Page) {
+  // Com a lista fixa na lateral não há avatares para passar o mouse.
+  const trigger = page.getByTestId("people-trigger");
+  if (await trigger.count()) await trigger.hover();
+  return page.getByTestId("participant");
+}

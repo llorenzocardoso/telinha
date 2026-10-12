@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Monitor } from "lucide-react";
 import type { ConnectionQuality } from "../room/connectionQuality";
 import type { ParticipantState } from "../room/participants";
@@ -28,6 +28,16 @@ interface RoomLayoutProps {
   children?: ReactNode;
 }
 
+const PEOPLE_PANEL_KEY = "telinha-people-panel";
+
+function readPanelOpen(): boolean {
+  try {
+    return localStorage.getItem(PEOPLE_PANEL_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 const toneOf = (person: ParticipantState) =>
   person.self ? "bright" : person.connected ? "default" : "dim";
 
@@ -46,6 +56,18 @@ export function RoomLayout({
   onWatch,
   children,
 }: RoomLayoutProps) {
+  // Aberta: a lista fica na lateral como antes. Fechada: só os avatares, com a lista ao passar o mouse.
+  const [panelOpen, setPanelOpen] = useState(readPanelOpen);
+  function togglePanel() {
+    const next = !panelOpen;
+    setPanelOpen(next);
+    try {
+      localStorage.setItem(PEOPLE_PANEL_KEY, next ? "1" : "0");
+    } catch {
+      // Sem armazenamento, a escolha só vale até fechar o app.
+    }
+  }
+
   const rows: ParticipantRow[] = people.map((person) => ({
     id: person.id,
     name: person.name,
@@ -80,20 +102,39 @@ export function RoomLayout({
             </>
           )}
         </div>
-        <AvatarStack
-          people={people.map((person) => ({
-            id: person.id,
-            name: person.name,
-            tone: toneOf(person),
-          }))}
-        />
+        <div className="room-people-pop" data-testid="people-trigger">
+          {/* Os avatares são o controle: passar o mouse mostra a lista, clicar fixa na lateral. */}
+          <button
+            type="button"
+            className={`room-people-toggle ${panelOpen ? "is-active" : ""}`}
+            aria-pressed={panelOpen}
+            aria-label={panelOpen ? "Soltar a lista de pessoas da lateral" : "Fixar a lista de pessoas na lateral"}
+            onClick={togglePanel}
+          >
+            <AvatarStack
+              people={people.map((person) => ({
+                id: person.id,
+                name: person.name,
+                tone: toneOf(person),
+              }))}
+            />
+          </button>
+          {!panelOpen && (
+            <div className="room-people-card">
+              <ParticipantList people={rows} emptyHint="Conectando pessoas..." />
+              <p className="room-people-hint">Clique nos avatares para fixar na lateral</p>
+            </div>
+          )}
+        </div>
       </header>
 
-      <div className="room-body">
+      <div className={`room-body ${panelOpen ? "has-people" : ""}`}>
         <main className="room-stage">{stage}</main>
-        <aside className="room-people">
-          <ParticipantList people={rows} emptyHint="Conectando pessoas..." />
-        </aside>
+        {panelOpen && (
+          <aside className="room-people">
+            <ParticipantList people={rows} emptyHint="Conectando pessoas..." />
+          </aside>
+        )}
       </div>
 
       {dock}

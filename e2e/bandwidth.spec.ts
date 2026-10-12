@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { enterName, joinRoom, startSyntheticShare } from "./helpers";
+import { enterName, joinRoom, people, startSyntheticShare } from "./helpers";
 
 // Benchmark de upload da transmissora. Só roda com BENCH=1:
 //   BENCH=1 BENCH_LABEL=depois npm run test:e2e -- -g bandwidth
@@ -80,7 +80,7 @@ test("bandwidth: upload da transmissora", async ({ browser }) => {
   await startSyntheticShare(ana!);
 
   for (const page of others.slice(0, VIEWERS)) {
-    await page.getByTestId("participant").filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" }).click();
+    await (await people(page)).filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" }).click();
     const video = page.locator("video").first();
     await expect(video).toBeVisible();
     await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.currentTime)).toBeGreaterThan(0);

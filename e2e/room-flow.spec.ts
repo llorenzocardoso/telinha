@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { people } from "./helpers";
 
 async function enterName(page: Page, name: string) {
   await page.getByPlaceholder("Como você quer aparecer").fill(name);
@@ -136,7 +137,7 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
   }
 
   await startSyntheticShare(a);
-  await expect(b.getByTestId("participant").filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" })).toBeVisible();
+  await expect((await people(b)).filter({ hasText: "Ana" }).getByRole("button", { name: "Assistir" })).toBeVisible();
   await watchAndAssertFrames(b);
   await resizeAndAssertVideoFits(b);
   await expect(b.getByRole("button", { name: "Transmitir também" })).toBeVisible();
@@ -146,7 +147,7 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
   await expect(b.getByRole("button", { name: "Parar minha transmissão" })).toBeVisible();
 
   await expect(
-    c.getByTestId("participant").getByRole("button", { name: "Assistir" }),
+    (await people(c)).getByRole("button", { name: "Assistir" }),
   ).toHaveCount(2);
   await c.getByRole("button", { name: "Ver lado a lado" }).click();
   await expect(c.locator(".watch-video video")).toHaveCount(2);
@@ -156,8 +157,8 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
     "true",
   );
 
-  await expect(a.getByTestId("participant").filter({ hasText: "Bia" }).getByRole("button", { name: "Assistir" })).toBeVisible();
-  await a.getByTestId("participant").filter({ hasText: "Bia" }).getByRole("button", { name: "Assistir" }).click();
+  await expect((await people(a)).filter({ hasText: "Bia" }).getByRole("button", { name: "Assistir" })).toBeVisible();
+  await (await people(a)).filter({ hasText: "Bia" }).getByRole("button", { name: "Assistir" }).click();
   await expect(a.getByRole("button", { name: "Parar minha transmissão" })).toBeVisible();
   await a.getByRole("button", { name: "Parar de assistir" }).click();
   await expect(a.getByRole("button", { name: "Parar transmissão" })).toBeVisible();
@@ -177,8 +178,8 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
   await expect(b.getByRole("button", { name: "Entrar na sala" })).toBeVisible();
   await b.getByRole("textbox", { name: "Código ou link do convite" }).fill(code!);
   await b.getByRole("button", { name: "Entrar na sala" }).click();
-  await expect(a.getByTestId("participant").filter({ hasText: "Bia" })).toHaveCount(1);
-  await expect(a.getByTestId("participant").filter({ hasText: "Reconectando" })).toHaveCount(0);
+  await expect((await people(a)).filter({ hasText: "Bia" })).toHaveCount(1);
+  await expect((await people(a)).filter({ hasText: "Reconectando" })).toHaveCount(0);
 
   await contextA.close();
   await contextB.close();

@@ -43,8 +43,30 @@
   min-height: 0;
   flex: 1;
   gap: var(--space-4);
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr);
   padding: var(--space-4);
+}
+
+/* Lista de pessoas aberta: volta a ser uma coluna ao lado do palco. */
+.room-body.has-people {
+  grid-template-columns: minmax(0, 1fr) 280px;
+}
+
+.room-people {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* A lista de pessoas desce para baixo do palco em janela estreita. */
+@media (max-width: 760px) {
+  .room-body.has-people {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .room-people {
+    max-height: 180px;
+  }
 }
 
 .room-stage {
@@ -57,9 +79,39 @@
   overflow: hidden;
 }
 
-.room-people {
-  min-height: 0;
+/* Avatares no cabeçalho; ao passar o mouse abre o cartão com nomes e quantidade. */
+.room-people-pop {
+  position: relative;
+  border-radius: var(--radius-pill);
+  outline: none;
+}
+
+
+.room-people-card {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 30;
+  width: min(300px, calc(100vw - 2 * var(--space-4)));
+  max-height: min(60vh, 420px);
+  /* O respiro é padding, não margem: o ponteiro atravessa sem fechar o cartão. */
+  padding-top: var(--space-2);
   overflow-y: auto;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease,
+    visibility 0s linear 0.12s;
+}
+
+.room-people-pop:hover .room-people-card,
+.room-people-pop:focus-within .room-people-card {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition-delay: 0s;
 }
 
 /* A tela compartilhada é a estrela: a prévia ocupa o palco inteiro. */
@@ -115,14 +167,36 @@
   text-align: center;
 }
 
-/* A lista de pessoas desce para baixo do palco em janela estreita. */
-@media (max-width: 760px) {
-  .room-body {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
-  }
 
-  .room-people {
-    max-height: 180px;
-  }
+.room-people-card .ui-participants {
+  border: 1px solid var(--hairline);
+  box-shadow: var(--shadow-dock);
+}
+
+/* Os avatares são um botão: sem moldura, só um anel discreto quando a lista está fixada. */
+.room-people-toggle {
+  display: inline-flex;
+  padding: 3px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.room-people-toggle:hover,
+.room-people-toggle.is-active {
+  background: var(--surface-2);
+}
+
+.room-people-toggle:focus-visible {
+  outline: 2px solid var(--text-2);
+  outline-offset: 2px;
+}
+
+.room-people-hint {
+  padding: var(--space-2) var(--space-4) 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  text-align: center;
 }
