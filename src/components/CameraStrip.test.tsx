@@ -121,6 +121,17 @@ describe("CameraStrip", () => {
     expect(tile("ANA").className).not.toContain("is-focused");
   });
 
+  it("tem um botão de foco para teclado, com aria-pressed", () => {
+    const onFocus = vi.fn();
+    render(<CameraStrip cameras={[feed("ana"), feed("bia")]} focusedId="bia" onFocus={onFocus} />);
+    const ana = screen.getByRole("button", { name: "Ampliar a câmera de ANA" });
+    const bia = screen.getByRole("button", { name: "Reduzir a câmera de BIA" });
+    expect(ana.getAttribute("aria-pressed")).toBe("false");
+    expect(bia.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(ana);
+    expect(onFocus).toHaveBeenCalledWith("ana");
+  });
+
   it("ignora o botão direito e o clique no botão de configurações", () => {
     const onOpenSettings = vi.fn();
     render(<CameraStrip cameras={[feed("me", { isLocal: true })]} onOpenSettings={onOpenSettings} />);

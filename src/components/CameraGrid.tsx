@@ -1,5 +1,4 @@
 import { Settings } from "lucide-react";
-import type { KeyboardEvent, MouseEvent } from "react";
 import type { CameraFeedInfo } from "../hooks/useTelinhaRoom";
 import { VideoTile } from "./VideoTile";
 
@@ -84,30 +83,20 @@ function CameraCell({
 }) {
   const name = camera.isLocal ? "Você" : camera.participantName;
 
-  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.target !== event.currentTarget) return;
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onFocus(camera.participantIdentity);
-    }
-  }
-
-  function openSettings(event: MouseEvent<HTMLButtonElement>) {
-    // O botão não pode contar como clique na câmera.
-    event.stopPropagation();
-    onOpenSettings?.();
-  }
-
+  // O botão de foco cobre a câmera inteira e é irmão do botão de configurações: um botão
+  // dentro de outro seria interativo aninhado, que leitores de tela tratam mal.
   return (
     <div
       className={`camera-cell ${camera.isLocal ? "local" : ""} ${focused ? "is-focused" : ""}`}
-      role="button"
-      tabIndex={0}
-      aria-label={focused ? `Voltar para a grade (${name})` : `Focar na câmera de ${name}`}
-      onClick={() => onFocus(camera.participantIdentity)}
-      onKeyDown={onKeyDown}
     >
       <VideoTile stream={camera.stream} />
+      <button
+        type="button"
+        className="camera-cell-focus"
+        aria-pressed={focused}
+        aria-label={focused ? `Voltar para a grade (${name})` : `Focar na câmera de ${name}`}
+        onClick={() => onFocus(camera.participantIdentity)}
+      />
       <span className="camera-tile-name">{name}</span>
       {camera.isLocal && onOpenSettings && (
         <button
@@ -115,7 +104,7 @@ function CameraCell({
           className="camera-tile-settings"
           aria-label="Trocar câmera"
           title="Trocar câmera"
-          onClick={openSettings}
+          onClick={onOpenSettings}
         >
           <Settings aria-hidden="true" strokeWidth={1.8} />
         </button>

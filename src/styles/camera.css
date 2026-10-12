@@ -140,8 +140,7 @@
   transition: border-color 0.15s ease;
 }
 
-.camera-cell:hover,
-.camera-cell:focus-visible {
+.camera-cell:hover {
   border-color: var(--text-2);
 }
 
@@ -161,4 +160,54 @@
 
 .camera-cell:hover .camera-tile-settings {
   opacity: 1;
+}
+
+/* Botão de foco: cobre a câmera inteira; o de configurações e o nome ficam por cima. */
+.camera-cell-focus {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.camera-cell-focus:focus-visible {
+  outline: 2px solid var(--text-2);
+  outline-offset: -2px;
+}
+
+.camera-cell .camera-tile-name,
+.camera-cell .camera-tile-settings {
+  z-index: 2;
+}
+
+.camera-cell .camera-tile-name {
+  pointer-events: none;
+}
+
+/* Botão de foco da câmera flutuante: só para teclado; o mouse usa o próprio quadrado. */
+.camera-tile-focus {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  pointer-events: none;
+}
+
+.camera-tile-focus:focus-visible {
+  outline: 2px solid var(--text-2);
+  outline-offset: -2px;
+}
+
+.camera-tile .camera-tile-name,
+.camera-tile .camera-tile-settings {
+  z-index: 2;
 }

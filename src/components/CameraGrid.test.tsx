@@ -82,12 +82,29 @@ describe("CameraGrid", () => {
     expect(onFocus).not.toHaveBeenCalled();
   });
 
-  it("Enter na câmera a põe em foco", () => {
+  it("o foco é um botão de verdade, sem botão dentro de botão", () => {
     const onFocus = vi.fn();
-    render(<CameraGrid cameras={[feed("ana")]} focusedId={null} onFocus={onFocus} />);
-    fireEvent.keyDown(screen.getByRole("button", { name: "Focar na câmera de ANA" }), {
-      key: "Enter",
-    });
+    const { container } = render(
+      <CameraGrid
+        cameras={[feed("me", { isLocal: true }), feed("ana")]}
+        focusedId={null}
+        onFocus={onFocus}
+        onOpenSettings={vi.fn()}
+      />,
+    );
+    const focus = screen.getByRole("button", { name: "Focar na câmera de ANA" });
+    // Botão nativo: Enter e Espaço funcionam pelo navegador, e `aria-pressed` diz o estado.
+    expect(focus.tagName).toBe("BUTTON");
+    expect(focus.getAttribute("aria-pressed")).toBe("false");
+    expect(container.querySelector("button button, [role='button'] button")).toBeNull();
+    fireEvent.click(focus);
     expect(onFocus).toHaveBeenCalledWith("ana");
+  });
+
+  it("a câmera em foco aparece como pressionada", () => {
+    render(<CameraGrid cameras={[feed("ana"), feed("bia")]} focusedId="ana" onFocus={vi.fn()} />);
+    expect(
+      screen.getByRole("button", { name: "Voltar para a grade (ANA)" }).getAttribute("aria-pressed"),
+    ).toBe("true");
   });
 });

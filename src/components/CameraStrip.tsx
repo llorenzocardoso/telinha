@@ -119,6 +119,8 @@ function CameraTile({
     setDragging(false);
   }
 
+  const name = camera.isLocal ? "Você" : camera.participantName;
+
   function onPointerUp() {
     // Soltar sem ter arrastado é um clique: põe a câmera em foco.
     const wasClick = drag.current !== null && !moved.current;
@@ -136,7 +138,16 @@ function CameraTile({
       onPointerCancel={endDrag}
     >
       <VideoTile stream={camera.stream} />
-      <span className="camera-tile-name">{camera.isLocal ? "Você" : camera.participantName}</span>
+      {/* O mouse foca pelo clique no próprio quadrado (que também arrasta); este botão é o
+          caminho do teclado e dos leitores de tela, e não recebe o ponteiro. */}
+      <button
+        type="button"
+        className="camera-tile-focus"
+        aria-pressed={focused}
+        aria-label={`${focused ? "Reduzir" : "Ampliar"} a câmera de ${name}`}
+        onClick={onClick}
+      />
+      <span className="camera-tile-name">{name}</span>
       {camera.isLocal && onOpenSettings && (
         <button
           type="button"
