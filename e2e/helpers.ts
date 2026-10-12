@@ -17,7 +17,8 @@ export async function joinRoom(page: Page, code: string, name: string, host: Pag
   await enterName(page, name);
   await page.getByRole("textbox", { name: "Código ou link do convite" }).fill(code);
   await page.getByRole("button", { name: "Entrar na sala" }).click();
-  await expect(host.getByText(name, { exact: false })).toBeVisible();
+  // Basta a pessoa estar na lista; o cartão recolhido só abre com o mouse em cima.
+  await expect(host.getByTestId("participant").filter({ hasText: name })).toHaveCount(1);
 }
 
 /**

@@ -120,17 +120,17 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
   await enterName(b, "Bia");
   await b.getByRole("textbox", { name: "Código ou link do convite" }).fill(code!);
   await b.getByRole("button", { name: "Entrar na sala" }).click();
-  await expect(a.getByText("Bia", { exact: false })).toBeVisible();
+  await expect((await people(a)).filter({ hasText: "Bia" })).toBeVisible();
 
   await enterName(c, "Caio");
   await c.getByRole("textbox", { name: "Código ou link do convite" }).fill(code!);
   await c.getByRole("button", { name: "Entrar na sala" }).click();
-  await expect(a.getByText("Caio", { exact: false })).toBeVisible();
+  await expect((await people(a)).filter({ hasText: "Caio" })).toBeVisible();
 
   await a.getByRole("button", { name: "Ligar câmera", exact: true }).click();
-  await expect(a.locator(".camera-tile.local video")).toHaveCount(1);
+  await expect(a.locator(":is(.camera-tile, .camera-cell).local video")).toHaveCount(1);
   for (const viewer of [b, c]) {
-    const camera = viewer.locator(".camera-tile video");
+    const camera = viewer.locator(":is(.camera-tile, .camera-cell) video");
     await expect(camera).toHaveCount(1);
     await expect(viewer.locator(".camera-tile-name")).toHaveText("Ana");
     await expect.poll(() => camera.evaluate((element) => (element as HTMLVideoElement).currentTime)).toBeGreaterThan(0);
@@ -168,11 +168,11 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
   await b.getByRole("button", { name: "Parar transmissão" }).click();
   await a.getByRole("button", { name: "Parar transmissão" }).click();
 
-  await expect(b.locator(".camera-tile video")).toHaveCount(1);
+  await expect(b.locator(":is(.camera-tile, .camera-cell) video")).toHaveCount(1);
   await a.getByRole("button", { name: "Desligar câmera", exact: true }).click();
-  await expect(a.locator(".camera-tile")).toHaveCount(0);
-  await expect(b.locator(".camera-tile")).toHaveCount(0);
-  await expect(c.locator(".camera-tile")).toHaveCount(0);
+  await expect(a.locator(":is(.camera-tile, .camera-cell)")).toHaveCount(0);
+  await expect(b.locator(":is(.camera-tile, .camera-cell)")).toHaveCount(0);
+  await expect(c.locator(":is(.camera-tile, .camera-cell)")).toHaveCount(0);
 
   await b.getByRole("button", { name: "Sair da sala" }).click();
   await expect(b.getByRole("button", { name: "Entrar na sala" })).toBeVisible();
