@@ -1,3 +1,4 @@
+import logo from "../assets/telinha-logo.svg";
 import { useEffect, useState, type ReactNode } from "react";
 import { createRoom, enterRoom, isValidRoomCode, type RoomSession } from "../lib/api";
 import { roomCodeFromInput } from "../lib/roomCode";
@@ -81,6 +82,7 @@ export function HomeScreen({
     <main className="screen home">
       <div className="home-shell">
         <header className="home-head">
+          <img className="home-logo" src={logo} alt="" width={72} height={72} />
           <h1>Telinha</h1>
           <p>Compartilhe sua tela em segundos.</p>
         </header>

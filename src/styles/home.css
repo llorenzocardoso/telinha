@@ -172,3 +172,14 @@
     gap: var(--space-4);
   }
 }
+
+/* O ícone do app acima do nome; o texto do título já diz "Telinha", então a imagem é decorativa. */
+.home-logo {
+  width: 72px;
+  height: 72px;
+  margin-bottom: var(--space-2);
+  border-radius: 18px;
+  box-shadow: var(--shadow-dock);
+  user-select: none;
+  -webkit-user-drag: none;
+}
