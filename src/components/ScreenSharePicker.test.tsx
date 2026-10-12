@@ -63,6 +63,7 @@ describe("ScreenSharePicker", () => {
         maxHeight: 1080,
         maxBitrate: 10_000_000,
         includeAudio: true,
+        showCursor: true,
         preferH264: true,
       }),
     );
@@ -102,6 +103,18 @@ describe("ScreenSharePicker", () => {
     expect(localStorage.getItem("telinha-share-audio")).toBe("0");
   });
 
+  it("guarda a escolha de mostrar o cursor e a entrega na qualidade", async () => {
+    const onShare = vi.fn().mockResolvedValue(undefined);
+    render(<ScreenSharePicker onCancel={vi.fn()} onShare={onShare} />);
+    const toggle = screen.getByRole("switch", { name: "Mostrar cursor" });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(toggle);
+    expect(localStorage.getItem("telinha-share-cursor")).toBe("0");
+    fireEvent.click(screen.getByRole("button", { name: /Escolher janela/ }));
+    await waitFor(() => expect(onShare).toHaveBeenCalled());
+    expect(onShare.mock.calls[0]![1].showCursor).toBe(false);
+  });
+
   it("mostra o erro e volta a liberar o botão", async () => {
     const onShare = vi.fn().mockRejectedValue(new Error("O Windows não retornou uma faixa de vídeo."));
     render(<ScreenSharePicker onCancel={vi.fn()} onShare={onShare} />);
@@ -139,6 +152,6 @@ describe("ScreenSharePicker", () => {
   it("não traz o toggle de H.264 para a interface", () => {
     render(<ScreenSharePicker onCancel={vi.fn()} onShare={vi.fn()} />);
     expect(screen.queryByRole("switch", { name: /H\.264/ })).toBeNull();
-    expect(screen.getAllByRole("switch")).toHaveLength(1);
+    expect(screen.getAllByRole("switch")).toHaveLength(2);
   });
 });

@@ -87,13 +87,14 @@ export function presetFor(choice: ShareChoice): SharePreset | null {
 /** Monta a ShareQuality que o hook de captura espera. */
 export function shareQualityFrom(
   choice: ShareChoice,
-  options: { includeAudio: boolean; preferH264: boolean },
+  options: { includeAudio: boolean; preferH264: boolean; showCursor?: boolean },
 ): ShareQuality {
   const quality: ShareQuality = {
     fps: choice.fps,
     maxWidth: WIDTH_FOR[choice.height],
     maxBitrate: bitrateFor(choice.height, choice.fps),
     includeAudio: options.includeAudio,
+    showCursor: options.showCursor ?? true,
     preferH264: options.preferH264,
   };
   // "Original" não manda largura nem altura, então o Windows entrega a tela como ela é.

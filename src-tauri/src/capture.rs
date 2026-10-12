@@ -330,21 +330,23 @@ pub fn set_window_layout(app: AppHandle, layout: String) -> Result<(), String> {
     match layout.as_str() {
         "watch" => {
             let _ = window.set_always_on_top(false);
-            window
-                .set_min_size(Some(tauri::LogicalSize::new(800.0, 500.0)))
-                .map_err(|e| e.to_string())?;
-            window.set_fullscreen(true).map_err(|e| e.to_string())?;
+            if !window.is_fullscreen().unwrap_or(false) {
+                window
+                    .set_min_size(Some(tauri::LogicalSize::new(800.0, 500.0)))
+                    .map_err(|e| e.to_string())?;
+                window.set_fullscreen(true).map_err(|e| e.to_string())?;
+            }
         }
         "watch-window" => {
             let _ = window.set_always_on_top(false);
-            apply_window_size(&window, 720.0, 480.0, 1100.0, 700.0)?;
+            apply_window_size(&window, 640.0, 500.0, 720.0, 580.0)?;
         }
         "watch-dual" => {
             let _ = window.set_always_on_top(false);
-            apply_window_size(&window, 960.0, 540.0, 1440.0, 810.0)?;
+            apply_window_size(&window, 640.0, 500.0, 720.0, 580.0)?;
         }
         "lobby-cameras" => {
-            apply_window_size(&window, 640.0, 500.0, 980.0, 700.0)?;
+            apply_window_size(&window, 640.0, 500.0, 720.0, 580.0)?;
         }
         _ => {
             apply_window_size(&window, 640.0, 500.0, 720.0, 580.0)?;
@@ -360,14 +362,17 @@ fn apply_window_size(
     w: f64,
     h: f64,
 ) -> Result<(), String> {
-    window.set_fullscreen(false).map_err(|e| e.to_string())?;
-    let _ = window.unmaximize();
-    window
-        .set_min_size(Some(tauri::LogicalSize::new(min_w, min_h)))
-        .map_err(|e| e.to_string())?;
-    window
-        .set_size(tauri::LogicalSize::new(w, h))
-        .map_err(|e| e.to_string())?;
+    // Só mexe na janela ao sair da tela cheia. set_min_size reaplica o tamanho atual
+    // e desmaximiza/reposiciona a janela, então não pode rodar a cada troca de layout.
+    if window.is_fullscreen().unwrap_or(false) {
+        window.set_fullscreen(false).map_err(|e| e.to_string())?;
+        window
+            .set_min_size(Some(tauri::LogicalSize::new(min_w, min_h)))
+            .map_err(|e| e.to_string())?;
+        window
+            .set_size(tauri::LogicalSize::new(w, h))
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
