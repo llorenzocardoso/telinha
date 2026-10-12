@@ -10,10 +10,29 @@ interface DialogProps {
   children: ReactNode;
   footer?: ReactNode;
   onClose: () => void;
+  /** Painel mais estreito, para perguntas curtas. */
+  compact?: boolean;
+  /** Abre acima de qualquer outro diálogo (por exemplo, a confirmação de fechar o app). */
+  top?: boolean;
+  /** Classe extra no rodapé, para ajustar a disposição dos botões. */
+  footerClassName?: string;
 }
 
 /** Diálogo modal com foco preso e Esc para fechar; rola quando falta altura. */
-export function Dialog({ title, summary, children, footer, onClose }: DialogProps) {
+/** Diálogos abertos, do mais antigo ao mais novo: só o do topo reage a Esc e Tab. */
+const openDialogs: symbol[] = [];
+
+export function Dialog({
+  title,
+  summary,
+  children,
+  footer,
+  onClose,
+  compact,
+  top,
+  footerClassName,
+}: DialogProps) {
+  const idRef = useRef(Symbol("dialog"));
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<Element | null>(null);
 
@@ -33,7 +52,17 @@ export function Dialog({ title, summary, children, footer, onClose }: DialogProp
   }, [focusable]);
 
   useEffect(() => {
+    const id = idRef.current;
+    openDialogs.push(id);
+    return () => {
+      const index = openDialogs.indexOf(id);
+      if (index >= 0) openDialogs.splice(index, 1);
+    };
+  }, []);
+
+  useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (openDialogs[openDialogs.length - 1] !== idRef.current) return;
       if (event.key === "Escape") {
         event.preventDefault();
         onClose();
@@ -59,12 +88,12 @@ export function Dialog({ title, summary, children, footer, onClose }: DialogProp
   }, [focusable, onClose]);
 
   return (
-    <div className="ui-dialog-scrim" onPointerDown={(event) => {
+    <div className={`ui-dialog-scrim ${top ? "is-top" : ""}`} onPointerDown={(event) => {
       if (event.target === event.currentTarget) onClose();
     }}>
       <div
         ref={panelRef}
-        className="ui-dialog"
+        className={`ui-dialog ${compact ? "is-compact" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -75,7 +104,9 @@ export function Dialog({ title, summary, children, footer, onClose }: DialogProp
           {summary && <span className="ui-dialog-summary">{summary}</span>}
         </header>
         <div className="ui-dialog-body">{children}</div>
-        {footer && <footer className="ui-dialog-footer">{footer}</footer>}
+        {footer && (
+          <footer className={`ui-dialog-footer ${footerClassName ?? ""}`}>{footer}</footer>
+        )}
       </div>
     </div>
   );

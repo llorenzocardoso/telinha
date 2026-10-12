@@ -259,9 +259,6 @@ button:focus-visible {
   font-size: 0.68rem;
 }
 
-.close-prompt-actions {
-  flex-wrap: wrap;
-}
 
 .live-dot {
   width: 7px;

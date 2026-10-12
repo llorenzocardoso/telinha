@@ -784,3 +784,29 @@
   color: var(--text);
   font-size: var(--text-sm);
 }
+
+/* ---------- Diálogos: variantes ---------- */
+
+/* Acima de qualquer outro diálogo aberto, como a confirmação de fechar o app. */
+.ui-dialog-scrim.is-top {
+  z-index: 60;
+}
+
+.ui-dialog.is-compact {
+  max-width: 460px;
+}
+
+.close-prompt-copy {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+/* "Voltar" fica à esquerda; as ações que mudam algo, à direita. */
+.close-prompt-footer {
+  flex-wrap: wrap;
+}
+
+.close-prompt-footer > :first-child {
+  margin-right: auto;
+}
