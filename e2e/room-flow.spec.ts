@@ -157,6 +157,16 @@ test("compartilha nos dois sentidos e não duplica ao sair e voltar", async ({ b
     "true",
   );
 
+  // Clicar numa live a deixa em foco, ocupando tudo; clicar de novo volta ao lado a lado.
+  await c.getByRole("button", { name: "Focar na tela de Ana" }).click();
+  await expect(c.locator(".watch-video[data-focused='true']")).toHaveCount(1);
+  await expect(c.locator(".watch-pane:not(.is-hidden)")).toHaveCount(1);
+  // As lives continuam montadas: o vídeo (e o som) da outra não é interrompido.
+  await expect(c.locator(".watch-video video")).toHaveCount(2);
+  await c.getByRole("button", { name: "Voltar ao lado a lado (Ana)" }).click();
+  await expect(c.locator(".watch-video[data-focused='true']")).toHaveCount(0);
+  await expect(c.locator(".watch-pane:not(.is-hidden)")).toHaveCount(2);
+
   await expect((await people(a)).filter({ hasText: "Bia" }).getByRole("button", { name: "Assistir" })).toBeVisible();
   await (await people(a)).filter({ hasText: "Bia" }).getByRole("button", { name: "Assistir" }).click();
   await expect(a.getByRole("button", { name: "Parar minha transmissão" })).toBeVisible();
