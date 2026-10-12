@@ -44,8 +44,6 @@ export interface ShareQuality {
   maxHeight?: number;
   maxBitrate?: number;
   includeAudio: boolean;
-  /** Desenha o ponteiro do Windows na imagem; desligue para jogos, que têm a própria mira. */
-  showCursor?: boolean;
   preferH264: boolean;
 }
 

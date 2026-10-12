@@ -10,10 +10,6 @@ export function displayMediaOptions(
     frameRate: { ideal: quality.fps },
     resizeMode: "none",
   };
-  // Sem a chave, o Chromium decide; só pedimos "never" quando a pessoa desliga o cursor.
-  if (quality.showCursor === false) {
-    video.cursor = "never";
-  }
   if (quality.maxWidth > 0) {
     video.width = { max: quality.maxWidth };
   }

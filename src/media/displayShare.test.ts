@@ -50,14 +50,4 @@ describe("display media options", () => {
     expect(options.audio).toBe(false);
     expect(options.systemAudio).toBe("exclude");
   });
-
-  it("só pede cursor escondido quando a pessoa desliga o cursor", () => {
-    expect(displayMediaOptions(quality, true).video).not.toHaveProperty("cursor");
-    expect(displayMediaOptions({ ...quality, showCursor: true }, true).video).not.toHaveProperty(
-      "cursor",
-    );
-    expect(displayMediaOptions({ ...quality, showCursor: false }, true).video).toMatchObject({
-      cursor: "never",
-    });
-  });
 });

@@ -20,7 +20,6 @@ import {
 import { Button, Dialog, SegmentedControl, Switch } from "./ui";
 
 const AUDIO_KEY = "telinha-share-audio";
-const CURSOR_KEY = "telinha-share-cursor";
 
 interface ScreenSharePickerProps {
   onCancel: () => void;
@@ -38,9 +37,6 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
   const [choice, setChoice] = useState(() => parseShareChoice(localStorage.getItem(QUALITY_KEY)));
   const [includeAudio, setIncludeAudio] = useState(
     () => localStorage.getItem(AUDIO_KEY) !== "0",
-  );
-  const [showCursor, setShowCursor] = useState(
-    () => localStorage.getItem(CURSOR_KEY) !== "0",
   );
   const [sharing, setSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +67,6 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
         "screen:windows-picker",
         shareQualityFrom(choice, {
           includeAudio,
-          showCursor,
           preferH264: Boolean(gpuInfo?.available),
         }),
       );
@@ -157,16 +152,6 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
         onChange={(next) => {
           setIncludeAudio(next);
           localStorage.setItem(AUDIO_KEY, next ? "1" : "0");
-        }}
-      />
-
-      <Switch
-        label="Mostrar cursor"
-        hint="Desligue para jogos: eles já desenham a própria mira e o ponteiro do Windows aparece por cima."
-        checked={showCursor}
-        onChange={(next) => {
-          setShowCursor(next);
-          localStorage.setItem(CURSOR_KEY, next ? "1" : "0");
         }}
       />
 

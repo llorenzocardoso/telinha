@@ -48,7 +48,6 @@ describe("shareQualityFrom", () => {
       maxHeight: 1080,
       maxBitrate: 10_000_000,
       includeAudio: true,
-      showCursor: true,
       preferH264: true,
     });
   });
