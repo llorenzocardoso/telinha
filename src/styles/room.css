@@ -200,3 +200,11 @@
   font-size: var(--text-xs);
   text-align: center;
 }
+
+/* Esc fecha o cartão mesmo com o mouse em cima; precisa vir depois das regras de hover. */
+.room-people-pop:hover .room-people-card.is-dismissed,
+.room-people-pop:focus-within .room-people-card.is-dismissed {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+}

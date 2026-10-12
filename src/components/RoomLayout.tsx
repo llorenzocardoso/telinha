@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Monitor } from "lucide-react";
 import type { ConnectionQuality } from "../room/connectionQuality";
 import type { ParticipantState } from "../room/participants";
@@ -58,6 +58,9 @@ export function RoomLayout({
 }: RoomLayoutProps) {
   // Aberta: a lista fica na lateral como antes. Fechada: só os avatares, com a lista ao passar o mouse.
   const [panelOpen, setPanelOpen] = useState(readPanelOpen);
+  const cardId = useId();
+  // Esc fecha o cartão aberto pelo hover/foco; ele volta quando o mouse ou o foco reentram.
+  const [dismissed, setDismissed] = useState(false);
   function togglePanel() {
     const next = !panelOpen;
     setPanelOpen(next);
@@ -102,12 +105,22 @@ export function RoomLayout({
             </>
           )}
         </div>
-        <div className="room-people-pop" data-testid="people-trigger">
+        <div
+          className="room-people-pop"
+          onPointerEnter={() => setDismissed(false)}
+          onFocus={() => setDismissed(false)}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape" || panelOpen || dismissed) return;
+            setDismissed(true);
+            if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+          }}
+        >
           {/* Os avatares são o controle: passar o mouse mostra a lista, clicar fixa na lateral. */}
           <button
             type="button"
             className={`room-people-toggle ${panelOpen ? "is-active" : ""}`}
             aria-pressed={panelOpen}
+            aria-controls={panelOpen ? undefined : cardId}
             aria-label={panelOpen ? "Soltar a lista de pessoas da lateral" : "Fixar a lista de pessoas na lateral"}
             onClick={togglePanel}
           >
@@ -120,7 +133,7 @@ export function RoomLayout({
             />
           </button>
           {!panelOpen && (
-            <div className="room-people-card">
+            <div id={cardId} className={`room-people-card ${dismissed ? "is-dismissed" : ""}`}>
               <ParticipantList people={rows} emptyHint="Conectando pessoas..." />
               <p className="room-people-hint">Clique nos avatares para fixar na lateral</p>
             </div>

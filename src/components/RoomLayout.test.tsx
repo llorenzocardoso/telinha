@@ -51,4 +51,25 @@ describe("RoomLayout: lista de pessoas", () => {
     expect(again.container.querySelector("aside.room-people")).toBeNull();
     expect(localStorage.getItem("telinha-people-panel")).toBe("0");
   });
+
+  it("Esc fecha o cartão e ele volta quando o mouse reentra", () => {
+    const { container } = renderLayout();
+    const pop = container.querySelector(".room-people-pop") as HTMLElement;
+    const card = () => container.querySelector(".room-people-card") as HTMLElement;
+    expect(card().className).not.toContain("is-dismissed");
+
+    fireEvent.keyDown(pop, { key: "Escape" });
+    expect(card().className).toContain("is-dismissed");
+
+    fireEvent.pointerEnter(pop);
+    expect(card().className).not.toContain("is-dismissed");
+  });
+
+  it("o botão dos avatares aponta para o cartão que controla", () => {
+    const { container } = renderLayout();
+    const toggle = screen.getByRole("button", { name: "Fixar a lista de pessoas na lateral" });
+    const card = container.querySelector(".room-people-card") as HTMLElement;
+    expect(card.id).not.toBe("");
+    expect(toggle.getAttribute("aria-controls")).toBe(card.id);
+  });
 });
