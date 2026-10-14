@@ -12,6 +12,7 @@ Referência para quem desenvolve ou opera o Telinha. O [README da raiz](../READM
 | [development.md](development.md) | Rodar, testar, depurar e seguir as convenções do repositório |
 | [operations.md](operations.md) | Configurar variáveis, fazer deploy, publicar releases e forçar atualizações |
 | [security.md](security.md) | Modelo de ameaças, autenticação, limites e privacidade |
+| [native-share-testing.md](native-share-testing.md) | Testar o compartilhamento nativo (experimental): ligar, roteiro com outra pessoa, o que medir e reportar |
 
 ## Mapa rápido do código
 
@@ -30,6 +31,7 @@ server/src/               Servidor Express + ws
 src-tauri/src/            Shell desktop Rust (Tauri 2)
   lib.rs                    Plugins, bandeja, atalho global, deep links, comandos
   audio.rs / capture.rs     Loopback WASAPI, listagem de fontes, layout da janela
+  native_share/             Captura (WGC) + encoder H.264 por hardware + envio WebRTC em Rust (experimental)
 e2e/ + scripts/           Playwright com mídia sintética
 .github/workflows/        CI e release dos instaladores
 render.yaml               Serviço do servidor no Render
