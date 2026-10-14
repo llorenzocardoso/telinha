@@ -23,9 +23,16 @@ export type ClientSignal =
   | { type: "ping" | "leave" | "share-started" | "share-stopped" | "camera-stopped" }
   | { type: "camera-started"; streamId: string }
   | { type: "watch-started" | "watch-stopped"; to: string }
-  | { type: "offer"; to: string; sdp: string }
-  | { type: "answer"; to: string; sdp: string }
-  | { type: "ice"; to: string; candidate: Record<string, unknown> };
+  | { type: "offer"; to: string; sdp: string; channel?: ShareChannel }
+  | { type: "answer"; to: string; sdp: string; channel?: ShareChannel }
+  | { type: "ice"; to: string; candidate: Record<string, unknown>; channel?: ShareChannel };
+
+/**
+ * Marks signaling that belongs to a native (Rust) screen share connection instead of the regular
+ * peer connection used for camera and legacy shares. `share-out` is sent by the sharing side
+ * (its offer and ICE), `share-in` by the viewing side (its answer and ICE).
+ */
+export type ShareChannel = "share-out" | "share-in";
 
 export interface ProtocolError {
   code: "invalid-json" | "invalid-message" | "payload-too-large";
@@ -110,19 +117,34 @@ export function parseClientSignal(raw: string): ClientSignal | ProtocolError {
   if (value.type === "watch-started" || value.type === "watch-stopped") {
     return { type: value.type, to: value.to };
   }
-  if (value.type === "offer" || value.type === "answer") {
+  if (value.type === "offer" || value.type === "answer" || value.type === "ice") {
+    const channel = parseChannel(value.channel);
+    if (channel === null) {
+      return { code: "invalid-message", message: "Canal de sinalização inválido." };
+    }
+    if (value.type === "ice") {
+      if (!isRecord(value.candidate)) {
+        return { code: "invalid-message", message: "Mensagem de sinalização desconhecida." };
+      }
+      const encoded = JSON.stringify(value.candidate);
+      if (encoded.length <= MAX_CANDIDATE_LENGTH && validCandidate(value.candidate)) {
+        return { type: "ice", to: value.to, candidate: value.candidate, ...channel };
+      }
+      return { code: "invalid-message", message: "Mensagem de sinalização desconhecida." };
+    }
     if (typeof value.sdp !== "string" || !value.sdp || value.sdp.length > MAX_SDP_LENGTH) {
       return { code: "invalid-message", message: "Descrição de sessão inválida." };
     }
-    return { type: value.type, to: value.to, sdp: value.sdp };
-  }
-  if (value.type === "ice" && isRecord(value.candidate)) {
-    const encoded = JSON.stringify(value.candidate);
-    if (encoded.length <= MAX_CANDIDATE_LENGTH && validCandidate(value.candidate)) {
-      return { type: "ice", to: value.to, candidate: value.candidate };
-    }
+    return { type: value.type, to: value.to, sdp: value.sdp, ...channel };
   }
   return { code: "invalid-message", message: "Mensagem de sinalização desconhecida." };
+}
+
+/** `{}` when absent, `{channel}` when valid, `null` when present but not a known channel. */
+function parseChannel(value: unknown): { channel?: ShareChannel } | null {
+  if (value === undefined) return {};
+  if (value === "share-out" || value === "share-in") return { channel: value };
+  return null;
 }
 
 export function isProtocolError(value: ClientSignal | ProtocolError): value is ProtocolError {

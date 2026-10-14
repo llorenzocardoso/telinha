@@ -636,17 +636,20 @@ export function createTelinhaServer(options: TelinhaServerOptions = {}): Telinha
       ) {
         const target = room.participants.get(message.to);
         if (!target) return;
+        const channel = message.channel ? { channel: message.channel } : {};
         if (message.type === "ice") {
           send(target.ws, {
             type: message.type,
             from: participant.id,
             candidate: message.candidate,
+            ...channel,
           });
         } else {
           send(target.ws, {
             type: message.type,
             from: participant.id,
             sdp: message.sdp,
+            ...channel,
           });
         }
       }

@@ -101,8 +101,13 @@ Ao admitir, o servidor responde com `hello`. Quatro casos de admissão (`admitSo
 | `leave` | — | Remove o participante, avisa `participant-left`, fecha o socket |
 | `share-started` / `share-stopped` | — | Marca `sharing` e avisa os outros |
 | `watch-started` / `watch-stopped` | `to` | Encaminha ao alvo (só se o alvo existe, não é o próprio e, no `started`, está transmitindo) |
-| `offer` / `answer` | `to`, `sdp` | Encaminha ao alvo como `from` + `sdp` (SDP ≤ 60 KB) |
-| `ice` | `to`, `candidate` | Encaminha o candidato (≤ 8 KB serializado; `candidate` string ≤ 4096) |
+| `offer` / `answer` | `to`, `sdp`, `channel?` | Encaminha ao alvo como `from` + `sdp` (SDP ≤ 60 KB) |
+| `ice` | `to`, `candidate`, `channel?` | Encaminha o candidato (≤ 8 KB serializado; `candidate` string ≤ 4096) |
+
+`channel` é opcional e só existe para o compartilhamento nativo (conexão própria, separada da câmera):
+`"share-out"` em mensagens de quem transmite (oferta e seus ICE) e `"share-in"` nas de quem assiste (resposta
+e seus ICE). Qualquer outro valor é recusado (`invalid-message`); sem o campo a mensagem é a de sempre, e o
+servidor só o repassa, sem interpretar.
 
 Mensagem inválida: o servidor envia `error` (`code: "protocol-error"`) e fecha com 1008.
 
@@ -117,8 +122,8 @@ Mensagem inválida: o servidor envia `error` (`code: "protocol-error"`) e fecha 
 | `share-started` | `participantId`, `name` | Alguém começou a transmitir |
 | `share-stopped` | `participantId` | Alguém parou |
 | `watch-started` / `watch-stopped` | `from`, `to`, `name` | Só para o transmissor alvo. `watch-started` é o **gatilho da oferta**: o transmissor só faz `offer` a quem o enviou. `watch-stopped` encerra o envio a esse espectador |
-| `offer` / `answer` | `from`, `sdp` | Negociação |
-| `ice` | `from`, `candidate` | Candidato ICE |
+| `offer` / `answer` | `from`, `sdp`, `channel?` | Negociação (`channel` repassado como veio) |
+| `ice` | `from`, `candidate`, `channel?` | Candidato ICE (`channel` repassado como veio) |
 | `pong` | — | Resposta a `ping` |
 | `error` | `message`, `code?` | Ver tabela abaixo |
 

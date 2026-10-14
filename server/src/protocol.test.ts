@@ -77,6 +77,45 @@ describe("protocolo de sinalização", () => {
     ).toBe(true);
   });
 
+  it("aceita o canal do compartilhamento nativo em oferta, resposta e ICE", () => {
+    for (const channel of ["share-out", "share-in"] as const) {
+      expect(
+        parseClientSignal(JSON.stringify({ type: "offer", to: peer, sdp: "v=0", channel })),
+      ).toEqual({ type: "offer", to: peer, sdp: "v=0", channel });
+      expect(
+        parseClientSignal(JSON.stringify({ type: "answer", to: peer, sdp: "v=0", channel })),
+      ).toEqual({ type: "answer", to: peer, sdp: "v=0", channel });
+      expect(
+        parseClientSignal(
+          JSON.stringify({ type: "ice", to: peer, candidate: { candidate: "candidate:1" }, channel }),
+        ),
+      ).toMatchObject({ type: "ice", to: peer, channel });
+    }
+  });
+
+  it("sem canal, a mensagem continua como antes", () => {
+    const offer = parseClientSignal(JSON.stringify({ type: "offer", to: peer, sdp: "v=0" }));
+    expect(offer).toEqual({ type: "offer", to: peer, sdp: "v=0" });
+    expect(offer).not.toHaveProperty("channel");
+  });
+
+  it("recusa um canal desconhecido", () => {
+    for (const channel of ["camera", "", 7, null]) {
+      expect(
+        isProtocolError(
+          parseClientSignal(JSON.stringify({ type: "offer", to: peer, sdp: "v=0", channel })),
+        ),
+      ).toBe(true);
+    }
+    expect(
+      isProtocolError(
+        parseClientSignal(
+          JSON.stringify({ type: "ice", to: peer, candidate: { candidate: "candidate:1" }, channel: "x" }),
+        ),
+      ),
+    ).toBe(true);
+  });
+
   it("rejeita destinatário, JSON e payload excessivo", () => {
     expect(isProtocolError(parseClientSignal("{"))).toBe(true);
     expect(
