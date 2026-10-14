@@ -1,0 +1,4 @@
+# libwebrtc (native share) is built with the static C runtime; Rust must match or linking fails
+# with LNK2038 RuntimeLibrary mismatches.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

@@ -23,22 +23,43 @@ pub fn start_share_audio(
     stop: Arc<AtomicBool>,
 ) {
     thread::spawn(move || {
-        if let Err(error) = run_capture(&app, &source_id, pid, &stop) {
+        let result = run_capture(&source_id, pid, &stop, |bytes| {
+            push_audio_bytes(&app, bytes)
+        });
+        if let Err(error) = result {
             let _ = app.emit("share-audio-error", error);
             emit_silence(&app, &stop);
         }
     });
 }
 
+/// Captures the system audio of a share source and hands every 40 ms block to `deliver` as
+/// interleaved little-endian `f32` stereo at 48 kHz (what `CHUNK_FRAMES` frames of
+/// `CHANNELS` channels come to). Used by the native sender, which feeds libwebrtc directly instead
+/// of going through the frontend. `on_error` runs once if the capture cannot start or dies.
+pub fn start_audio_tap(
+    source_id: String,
+    pid: Option<u32>,
+    stop: Arc<AtomicBool>,
+    deliver: impl FnMut(Vec<u8>) + Send + 'static,
+    on_error: impl FnOnce(String) + Send + 'static,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        if let Err(error) = run_capture(&source_id, pid, &stop, deliver) {
+            on_error(error);
+        }
+    })
+}
+
 fn run_capture(
-    app: &AppHandle,
     source_id: &str,
     pid: Option<u32>,
     stop: &AtomicBool,
+    mut deliver: impl FnMut(Vec<u8>),
 ) -> Result<(), String> {
     #[cfg(not(windows))]
     {
-        let _ = (app, source_id, pid);
+        let _ = (source_id, pid, stop, &mut deliver);
         return Err("Captura de áudio só está disponível no Windows".into());
     }
 
@@ -88,7 +109,7 @@ fn run_capture(
         audio_client.start_stream().map_err(|e| e.to_string())?;
 
         while !stop.load(Ordering::Relaxed) {
-            drain_chunks(app, &mut sample_queue, blockalign);
+            drain_chunks(&mut sample_queue, blockalign, &mut deliver);
 
             match capture_client.get_next_packet_size() {
                 Ok(Some(frames)) if frames > 0 => {
@@ -223,13 +244,36 @@ fn is_discord_executable(executable: &str) -> bool {
     )
 }
 
-fn drain_chunks(app: &AppHandle, sample_queue: &mut VecDeque<u8>, blockalign: usize) {
+fn drain_chunks(
+    sample_queue: &mut VecDeque<u8>,
+    blockalign: usize,
+    deliver: &mut impl FnMut(Vec<u8>),
+) {
     let chunk_bytes = blockalign * CHUNK_FRAMES;
     while sample_queue.len() >= chunk_bytes {
         let chunk: Vec<u8> = sample_queue.drain(..chunk_bytes).collect();
-        push_audio_bytes(app, chunk);
+        deliver(chunk);
     }
 }
+
+/// Converts one captured block (`f32` little endian, interleaved) to the 16-bit PCM libwebrtc
+/// takes, clamping instead of wrapping when the mix is hot.
+pub fn f32_bytes_to_i16(bytes: &[u8]) -> Vec<i16> {
+    // A trailing partial sample (fewer than 4 bytes) is dropped.
+    let (samples, _) = bytes.as_chunks::<4>();
+    samples
+        .iter()
+        .map(|sample| {
+            let value = f32::from_le_bytes(*sample);
+            (value.clamp(-1.0, 1.0) * f32::from(i16::MAX)).round() as i16
+        })
+        .collect()
+}
+
+/// Frames per delivered block and the stream format, for consumers of `start_audio_tap`.
+pub const TAP_SAMPLE_RATE: u32 = SAMPLE_RATE;
+pub const TAP_CHANNELS: u32 = CHANNELS;
+pub const TAP_FRAMES: u32 = CHUNK_FRAMES as u32;
 
 fn emit_silence(app: &AppHandle, stop: &AtomicBool) {
     let silent = vec![0u8; CHUNK_FRAMES * CHANNELS as usize * 4];
@@ -301,6 +345,20 @@ mod tests {
             select_loopback_target("window:9", Some(42), 7, None),
             Err("PID do aplicativo não encontrado".to_string())
         );
+    }
+
+    #[test]
+    fn converts_float_pcm_to_16_bit_with_clamping() {
+        let samples: Vec<u8> = [0.0f32, 1.0, -1.0, 0.5, 2.0, -3.0]
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect();
+        assert_eq!(
+            f32_bytes_to_i16(&samples),
+            vec![0, 32767, -32767, 16384, 32767, -32767]
+        );
+        // A trailing partial sample is ignored, never read out of bounds.
+        assert_eq!(f32_bytes_to_i16(&[0, 0, 0]), Vec::<i16>::new());
     }
 
     #[test]

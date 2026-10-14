@@ -55,13 +55,13 @@ fn encode_jpeg_bytes(img: &RgbaImage, quality: u8) -> Result<Vec<u8>, String> {
     Ok(buf)
 }
 
-fn jpeg_data_url(img: &RgbaImage, quality: u8) -> String {
+pub(crate) fn jpeg_data_url(img: &RgbaImage, quality: u8) -> String {
     encode_jpeg_bytes(img, quality)
         .map(|bytes| format!("data:image/jpeg;base64,{}", STANDARD.encode(bytes)))
         .unwrap_or_default()
 }
 
-fn fit_width(img: RgbaImage, max_width: u32) -> RgbaImage {
+pub(crate) fn fit_width(img: RgbaImage, max_width: u32) -> RgbaImage {
     if img.width() <= max_width || max_width == 0 {
         return img;
     }
@@ -69,7 +69,7 @@ fn fit_width(img: RgbaImage, max_width: u32) -> RgbaImage {
     image::imageops::resize(&img, max_width, height.max(1), FilterType::Triangle)
 }
 
-fn capture_source_image(id: &str) -> Result<RgbaImage, String> {
+pub(crate) fn capture_source_image(id: &str) -> Result<RgbaImage, String> {
     if let Some(screen_id) = id.strip_prefix("screen:") {
         let target: u32 = screen_id.parse().map_err(|_| "Tela inválida".to_string())?;
         for monitor in Monitor::all().map_err(|e| e.to_string())? {
@@ -95,7 +95,7 @@ fn capture_source_image(id: &str) -> Result<RgbaImage, String> {
     Err("Fonte inválida".into())
 }
 
-fn should_skip_window(window: &Window) -> bool {
+pub(crate) fn should_skip_window(window: &Window) -> bool {
     let title = window.title().unwrap_or_default();
     let app_name = window.app_name().unwrap_or_default();
     if title.trim().is_empty() {

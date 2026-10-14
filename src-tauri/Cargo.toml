@@ -28,13 +28,38 @@ discord-rich-presence = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 xcap = "0.9"
-image = { version = "0.25", default-features = false, features = ["jpeg", "webp"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 base64 = "0.22"
 
 [target.'cfg(windows)'.dependencies]
 wasapi = "0.19"
+libwebrtc = "0.3.52"
 webview2-com = "0.39"
-windows = { version = "0.61", features = ["Win32_Graphics_Dxgi", "Win32_System_Diagnostics_ToolHelp"] }
+windows = { version = "0.61", features = [
+  "Foundation",
+  "Graphics_Capture",
+  "Graphics_DirectX",
+  "Graphics_DirectX_Direct3D11",
+  "Win32_Foundation",
+  "Win32_Graphics_Direct3D",
+  "Win32_Graphics_Direct3D11",
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Dxgi_Common",
+  "Win32_Graphics_Gdi",
+  "Win32_Media_MediaFoundation",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Com",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Ole",
+  "Win32_System_Threading",
+  "Win32_System_Variant",
+  "Win32_System_WinRT",
+  "Win32_System_WinRT_Direct3D11",
+  "Win32_System_WinRT_Graphics_Capture",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
 
 [profile.release]
 codegen-units = 1
