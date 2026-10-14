@@ -4,6 +4,15 @@ import type { ShareQuality } from "../hooks/useTelinhaRoom";
 import { isTauriRuntime } from "../lib/runtime";
 import { ShareCancelledError } from "../media/displayShare";
 import {
+  WINDOWS_PICKER_ID,
+  devRecord,
+  getNativeCapability,
+  nativeShareFlag,
+  setNativeShareFlag,
+  type NativeCapability,
+  type RecordSummary,
+} from "../media/nativeShare";
+import {
   FPS_HINTS,
   QUALITY_KEY,
   SHARE_FPS,
@@ -17,6 +26,7 @@ import {
   type ShareFps,
   type ShareHeight,
 } from "../media/shareQuality";
+import { NativeSourcePicker } from "./NativeSourcePicker";
 import { Button, Dialog, SegmentedControl, Switch } from "./ui";
 
 const AUDIO_KEY = "telinha-share-audio";
@@ -42,6 +52,30 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
   const [error, setError] = useState<string | null>(null);
   // H.264 é automático: entra quando há encoder por GPU, sem toggle na interface.
   const [gpuInfo, setGpuInfo] = useState<GpuEncodeInfo | null>(null);
+  // Experimental: seletor próprio com miniaturas, só quando o interruptor está ligado.
+  const [nativeFlag, setNativeFlag] = useState(() => nativeShareFlag());
+  const [capability, setCapability] = useState<NativeCapability | null>(null);
+  const [sourceId, setSourceId] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [recorded, setRecorded] = useState<RecordSummary | null>(null);
+  const nativeReady = nativeFlag && capability?.available === true;
+
+  useEffect(() => {
+    if (!nativeFlag) return;
+    let cancelled = false;
+    getNativeCapability()
+      .then((found) => {
+        if (!cancelled) setCapability(found);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCapability({ available: false, vendor: "none", encoder: "", reason: "falha ao consultar" });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [nativeFlag]);
 
   useEffect(() => {
     if (!nativeRuntime) {
@@ -64,7 +98,7 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
     setError(null);
     try {
       await onShare(
-        "screen:windows-picker",
+        nativeReady && sourceId ? sourceId : WINDOWS_PICKER_ID,
         shareQualityFrom(choice, {
           includeAudio,
           preferH264: Boolean(gpuInfo?.available),
@@ -79,6 +113,37 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
     }
   }
 
+  async function record() {
+    if (!sourceId) return;
+    setRecording(true);
+    setRecorded(null);
+    setError(null);
+    try {
+      const quality = shareQualityFrom(choice, { includeAudio: false, preferH264: true });
+      setRecorded(
+        await devRecord(
+          sourceId,
+          5,
+          quality.maxHeight ?? 0,
+          quality.fps,
+          Math.round((quality.maxBitrate ?? 8_000_000) / 1_000_000),
+        ),
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setRecording(false);
+    }
+  }
+
+  function toggleNativePicker(next: boolean) {
+    setNativeShareFlag(next);
+    setNativeFlag(next);
+    setCapability(null);
+    setSourceId(null);
+    setError(null);
+  }
+
   const preset = presetFor(choice);
 
   return (
@@ -91,12 +156,19 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
           <Button variant="ghost" disabled={sharing} onClick={onCancel}>
             Cancelar
           </Button>
-          <Button variant="primary" size="lg" disabled={sharing} onClick={() => void share()}>
-            {sharing ? "Abrindo..." : "Escolher janela"}
+          <Button
+            variant="primary"
+            size="lg"
+            disabled={sharing || (nativeReady && !sourceId)}
+            onClick={() => void share()}
+          >
+            {sharing ? "Abrindo..." : nativeReady ? "Compartilhar" : "Escolher janela"}
           </Button>
         </>
       }
     >
+      {nativeReady && <NativeSourcePicker value={sourceId} onChange={setSourceId} />}
+
       <section className="share-field">
         <header>
           <strong>Atalhos rápidos</strong>
@@ -144,9 +216,11 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
       <Switch
         label="Incluir som do computador"
         hint={
-          nativeRuntime
-            ? "O Discord fica de fora quando está aberto."
-            : "Inclui áudio quando a fonte escolhida permitir."
+          nativeReady
+            ? "Tela: tudo menos o Discord. Janela: só o som desse aplicativo."
+            : nativeRuntime
+              ? "O Discord fica de fora quando está aberto."
+              : "Inclui áudio quando a fonte escolhida permitir."
         }
         checked={includeAudio}
         onChange={(next) => {
@@ -155,11 +229,52 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
         }}
       />
 
-      <p className="share-note">
-        {nativeRuntime
-          ? "O Windows mostra aplicativos e monitores no próximo passo."
-          : "O navegador mostra abas, janelas e monitores no próximo passo."}
-      </p>
+      {nativeRuntime && (
+        <Switch
+          label="Seletor de telas próprio (experimental)"
+          hint="Escolha telas e janelas aqui dentro, com miniaturas e envio direto pelo app."
+          checked={nativeFlag}
+          onChange={toggleNativePicker}
+        />
+      )}
+
+      {!nativeReady && (
+        <p className="share-note">
+          {nativeRuntime
+            ? "O Windows mostra aplicativos e monitores no próximo passo."
+            : "O navegador mostra abas, janelas e monitores no próximo passo."}
+        </p>
+      )}
+      {nativeFlag && capability && !capability.available && (
+        <p className="share-note">
+          Compartilhamento nativo indisponível ({capability.reason ?? "sem codificador por GPU"});
+          usando o seletor do Windows.
+        </p>
+      )}
+
+      {nativeReady && import.meta.env.DEV && (
+        <div className="share-dev">
+          <span>
+            Experimental · {capability?.encoder}. Teste de captura: grava a fonte escolhida por 5 s
+            na pasta temporária, sem enviar nada.
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!sourceId || recording}
+            onClick={() => void record()}
+          >
+            {recording ? "Gravando…" : "Gravar 5 s (teste)"}
+          </Button>
+          {recorded && (
+            <span data-testid="share-dev-result">
+              {recorded.frames} quadros, {recorded.keyframes} keyframe(s),{" "}
+              {(recorded.bytes / 1_000_000).toFixed(1)} MB, {recorded.width}×{recorded.height},{" "}
+              {recorded.avgLatencyMs.toFixed(1)} ms · {recorded.path}
+            </span>
+          )}
+        </div>
+      )}
 
       {error && (
         <p className="share-error" role="alert">

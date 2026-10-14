@@ -139,6 +139,91 @@ describe("ScreenSharePicker", () => {
   it("não traz o toggle de H.264 para a interface", () => {
     render(<ScreenSharePicker onCancel={vi.fn()} onShare={vi.fn()} />);
     expect(screen.queryByRole("switch", { name: /H\.264/ })).toBeNull();
-    expect(screen.getAllByRole("switch")).toHaveLength(1);
+    // Só o som e o seletor próprio (experimental); nada de codec.
+    expect(screen.getAllByRole("switch").map((item) => item.getAttribute("aria-label"))).toEqual([
+      "Incluir som do computador",
+      "Seletor de telas próprio (experimental)",
+    ]);
+  });
+});
+
+describe("ScreenSharePicker com o seletor nativo", () => {
+  const sources = [
+    { id: "screen:1", kind: "screen", name: "Monitor 1", width: 1920, height: 1080 },
+    { id: "window:10", kind: "window", name: "Janela A", app: "a.exe", width: 800, height: 600 },
+  ];
+
+  function nativeBackend(capability: Record<string, unknown>) {
+    mockedInvoke.mockReset().mockImplementation(async (cmd, args) => {
+      if (cmd === "gpu_encode_info") return { available: true, vendor: "nvidia", name: "RTX" };
+      if (cmd === "native_share_capability") return capability;
+      if (cmd === "native_share_sources") return sources;
+      if (cmd === "native_share_thumbnail") return `data:image/jpeg;base64,${(args as { id: string }).id}`;
+      throw new Error(`unexpected ${cmd}`);
+    });
+  }
+
+  it("o interruptor do diálogo liga o seletor próprio e guarda a escolha", async () => {
+    nativeBackend({ available: true, vendor: "nvidia", encoder: "NVIDIA H.264 Encoder MFT" });
+    render(<ScreenSharePicker onCancel={vi.fn()} onShare={vi.fn()} />);
+    const toggle = screen.getByRole("switch", { name: "Seletor de telas próprio (experimental)" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(screen.queryByText("O que compartilhar")).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(localStorage.getItem("telinha-native-share")).toBe("1");
+    expect(await screen.findByText("O que compartilhar")).toBeTruthy();
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+
+    fireEvent.click(toggle);
+    expect(localStorage.getItem("telinha-native-share")).toBe("0");
+    await waitFor(() => expect(screen.queryByText("O que compartilhar")).toBeNull());
+    expect(screen.getByRole("button", { name: /Escolher janela/ })).toBeTruthy();
+  });
+
+  it("com o interruptor desligado nunca consulta o backend nativo", async () => {
+    render(<ScreenSharePicker onCancel={vi.fn()} onShare={vi.fn()} />);
+    await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("gpu_encode_info"));
+    const commands = mockedInvoke.mock.calls.map(([cmd]) => cmd);
+    expect(commands.some((cmd) => String(cmd).startsWith("native_share"))).toBe(false);
+    expect(screen.queryByText("O que compartilhar")).toBeNull();
+  });
+
+  it("com o interruptor ligado mostra a grade e compartilha a fonte escolhida", async () => {
+    localStorage.setItem("telinha-native-share", "1");
+    nativeBackend({ available: true, vendor: "nvidia", encoder: "NVIDIA H.264 Encoder MFT" });
+    const onShare = vi.fn().mockResolvedValue(undefined);
+    render(<ScreenSharePicker onCancel={vi.fn()} onShare={onShare} />);
+
+    expect(await screen.findByText("O que compartilhar")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("radio", { name: "Janelas (1)" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Janela A/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Compartilhar" }));
+
+    await waitFor(() =>
+      expect(onShare).toHaveBeenCalledWith(
+        "window:10",
+        expect.objectContaining({ fps: 60, maxHeight: 1080, includeAudio: true }),
+      ),
+    );
+    expect(screen.queryByText(/O Windows mostra aplicativos/)).toBeNull();
+    // O som do computador também vale no envio nativo.
+    const audio = screen.getByRole("switch", { name: "Incluir som do computador" });
+    expect(audio.hasAttribute("disabled")).toBe(false);
+    expect(audio.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("sem codificador por GPU cai de volta no seletor do Windows", async () => {
+    localStorage.setItem("telinha-native-share", "1");
+    nativeBackend({ available: false, vendor: "none", encoder: "", reason: "Nenhuma GPU compatível" });
+    const onShare = vi.fn().mockResolvedValue(undefined);
+    render(<ScreenSharePicker onCancel={vi.fn()} onShare={onShare} />);
+
+    expect(await screen.findByText(/Compartilhamento nativo indisponível/)).toBeTruthy();
+    expect(screen.queryByText("O que compartilhar")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Escolher janela/ }));
+    await waitFor(() =>
+      expect(onShare).toHaveBeenCalledWith("screen:windows-picker", expect.anything()),
+    );
   });
 });

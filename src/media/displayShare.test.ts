@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { displayMediaOptions, needsNativeAudioLoopback } from "./displayShare";
+import { describe, expect, it, vi } from "vitest";
+import {
+  displayMediaOptions,
+  needsNativeAudioLoopback,
+  startDisplayMediaShare,
+} from "./displayShare";
 
 const quality = {
   fps: 60,
@@ -9,6 +13,18 @@ const quality = {
   includeAudio: true,
   preferH264: true,
 };
+
+describe("startDisplayMediaShare", () => {
+  it("não deixa uma fonte nativa cair no seletor do Windows", async () => {
+    const getDisplayMedia = vi.fn();
+    vi.stubGlobal("navigator", { mediaDevices: { getDisplayMedia } });
+    await expect(startDisplayMediaShare(quality, "window:10")).rejects.toThrow(
+      /só pode ser compartilhada pelo envio nativo/,
+    );
+    expect(getDisplayMedia).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+});
 
 describe("display media options", () => {
   it("asks Chromium for a smooth 60fps stream", () => {
