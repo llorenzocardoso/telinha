@@ -202,6 +202,40 @@ describe("NativeSender", () => {
     expect(mockedInvoke).not.toHaveBeenCalled();
   });
 
+  it("candidato que chega antes de a resposta ser aplicada espera por ela", async () => {
+    const { sender } = setup();
+    await sender.start("window:10", quality);
+    await sender.offerTo("peer-a");
+    const order: string[] = [];
+    mockedInvoke.mockImplementation(async (command) => {
+      if (command === "native_share_answer") {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      order.push(command);
+      return undefined;
+    });
+    const answer = sender.handleAnswer("peer-a", "v=0 answer");
+    await sender.handleIce("peer-a", { candidate: "candidate:1", sdpMid: "0", sdpMLineIndex: 0 });
+    await answer;
+    expect(order).toEqual(["native_share_answer", "native_share_ice"]);
+  });
+
+  it("um candidato recusado pelo Rust não vira erro da sala", async () => {
+    const onDiagnostic = vi.fn();
+    const sender = new NativeSender({
+      send: () => undefined,
+      iceServers: () => [],
+      onEnded: vi.fn(),
+      onDiagnostic,
+    });
+    await sender.start("window:10", quality);
+    await sender.offerTo("peer-a");
+    await sender.handleAnswer("peer-a", "v=0 answer");
+    mockedInvoke.mockRejectedValueOnce("candidato inválido");
+    await expect(sender.handleIce("peer-a", { candidate: "candidate:2" })).resolves.toBeUndefined();
+    expect(onDiagnostic).toHaveBeenCalledWith("native-share-ice-rejected", expect.anything());
+  });
+
   it("fecha a conexão do espectador uma única vez", async () => {
     const { sender } = setup();
     await sender.start("window:10", quality);
