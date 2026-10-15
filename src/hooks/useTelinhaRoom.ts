@@ -22,6 +22,15 @@ import {
 } from "../media/displayShare";
 import { isTauriRuntime } from "../lib/runtime";
 import { createShareAudioPump, createShareAudioTrack } from "../media/shareAudio";
+import {
+  WINDOWS_PICKER_ID,
+  isNativeSourceId,
+  nativePreviewFrame,
+  shouldFallBackToWindowsPicker,
+} from "../media/nativeShare";
+import { NativePreview } from "../room/nativePreview";
+import { NativeSender } from "../room/nativeSender";
+import { ShareReceiver } from "../room/shareReceiver";
 import { ConnectionState } from "./connectionState";
 import {
   classifyConnectionQuality,
@@ -58,6 +67,8 @@ function roomIceConfig(session: RoomSession): RTCConfiguration {
 }
 
 const VIDEO_MAX_BITRATE = 10_000_000;
+/** Largura dos quadros da prévia da própria live nativa. */
+
 const P2P_BLOCKED_MESSAGE =
   "Não foi possível conectar direto. A rede pode estar bloqueando o P2P.";
 const MEDIA_RECOVERING_NETWORK = "A live não recebeu dados. Tentando reconectar...";
@@ -81,6 +92,12 @@ export function useTelinhaRoom(
 ) {
   const wsRef = useRef<WebSocket | null>(null);
   const peerManagerRef = useRef<PeerManager | null>(null);
+  // Compartilhamento nativo (captura e WebRTC em Rust); a conexão comum segue só com câmera e lives legadas.
+  const nativeSenderRef = useRef<NativeSender | null>(null);
+  const shareReceiverRef = useRef<ShareReceiver | null>(null);
+  // Prévia da própria live nativa: só para a interface local, nunca vai a outras pessoas.
+  const nativePreviewRef = useRef<NativePreview | null>(null);
+  const previewStreamRef = useRef<MediaStream | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraDeviceRef = useRef<string | null>(null);
@@ -143,7 +160,7 @@ export function useTelinhaRoom(
       localId,
       people: peopleRef.current.values(),
       remoteStreams: remoteStreamsRef.current,
-      localStream: localStreamRef.current,
+      localStream: localStreamRef.current ?? previewStreamRef.current,
       localSharing: sharingRef.current,
       localCamera: cameraStreamRef.current,
     });
@@ -178,6 +195,8 @@ export function useTelinhaRoom(
 
   const closePeer = useCallback((peerId: string) => {
     peerManagerRef.current?.close(peerId);
+    nativeSenderRef.current?.stopViewer(peerId);
+    shareReceiverRef.current?.close(peerId);
     remoteStreamsRef.current.delete(peerId);
   }, []);
 
@@ -192,6 +211,8 @@ export function useTelinhaRoom(
   const reconcilePeer = useCallback(
     async (peerId: string) => {
       const sendingShare = audienceRef.current.has(peerId);
+      if (!sendingShare) nativeSenderRef.current?.stopViewer(peerId);
+      if (!watchingRef.current.has(peerId)) shareReceiverRef.current?.close(peerId);
       // A câmera vai para a sala toda, então ela sozinha já justifica manter o par aberto.
       const sendingCamera = cameraStreamRef.current !== null;
       const receiving =
@@ -214,8 +235,33 @@ export function useTelinhaRoom(
     }
   }, []);
 
+  /** Oferece a live nativa a quem pediu para assistir (conexão própria, só de vídeo). */
+  const offerNativeShare = useCallback(async (peerId: string) => {
+    try {
+      await nativeSenderRef.current?.offerTo(peerId);
+    } catch (error) {
+      recordDiagnostic("native-share-offer-failed", { message: errorMessage(error) });
+    }
+  }, []);
+
+  /**
+   * Mídia devida a um par que acabou de entrar ou voltou: a câmera (e a live legada) pela conexão
+   * comum, a live nativa pela dela.
+   */
+  const offerMediaTo = useCallback(
+    async (peerId: string) => {
+      const native = nativeSenderRef.current?.isActive === true;
+      const inAudience = audienceRef.current.has(peerId);
+      if (cameraStreamRef.current !== null || (inAudience && !native)) await offerToViewer(peerId);
+      if (inAudience && native) await offerNativeShare(peerId);
+    },
+    [offerNativeShare, offerToViewer],
+  );
+
   const offerToAudience = useCallback(
     async () => {
+      // A live nativa não depende do WebSocket: as conexões dos espectadores seguem de pé.
+      if (nativeSenderRef.current?.isActive) return;
       const viewers = audienceRef.current
         .ids()
         .filter((id) => peopleRef.current.get(id)?.connected);
@@ -233,6 +279,10 @@ export function useTelinhaRoom(
   }, [offerToViewer]);
 
   const cleanupNativeShare = useCallback(async () => {
+    await nativeSenderRef.current?.stop();
+    nativePreviewRef.current?.stop();
+    nativePreviewRef.current = null;
+    previewStreamRef.current = null;
     for (const unlisten of unlistensRef.current) {
       unlisten();
     }
@@ -286,6 +336,17 @@ export function useTelinhaRoom(
     const remoteStreams = remoteStreamsRef.current;
     const audience = audienceRef.current;
     const watching = watchingRef.current;
+    // Uma tela nova substitui a anterior; a câmera convive com ela. Vale para a conexão comum e
+    // para a do compartilhamento nativo.
+    const acceptRemoteStream = (peerId: string, stream: MediaStream) => {
+      if (stream.id !== peopleRef.current.get(peerId)?.cameraStreamId) {
+        dropRemoteStreams(peerId, "screen");
+      }
+      const streams = remoteStreamsRef.current.get(peerId) ?? new Map<string, MediaStream>();
+      streams.set(stream.id, stream);
+      remoteStreamsRef.current.set(peerId, streams);
+      publishShares(localId);
+    };
     const peerManager = new PeerManager({
       localId,
       configuration: roomIceConfig(session),
@@ -299,16 +360,7 @@ export function useTelinhaRoom(
       getRelayCapKbps: () => session.turnMaxBitrateKbps,
       preferH264: () => preferH264Ref.current,
       send: sendSignal,
-      onRemoteStream: (peerId, stream) => {
-        // Uma tela nova substitui a anterior; a câmera convive com ela.
-        if (stream.id !== peopleRef.current.get(peerId)?.cameraStreamId) {
-          dropRemoteStreams(peerId, "screen");
-        }
-        const streams = remoteStreamsRef.current.get(peerId) ?? new Map<string, MediaStream>();
-        streams.set(stream.id, stream);
-        remoteStreamsRef.current.set(peerId, streams);
-        publishShares(localId);
-      },
+      onRemoteStream: acceptRemoteStream,
       onConnectionState: (peerId, state) => {
         recordDiagnostic("peer-state", { peerId, state });
         if (state === "connected") {
@@ -354,6 +406,50 @@ export function useTelinhaRoom(
       onError: (message) => recordDiagnostic("peer-warning", { message }),
     });
     peerManagerRef.current = peerManager;
+    const nativeSender = new NativeSender({
+      send: sendSignal,
+      iceServers: () => roomIceConfig(session).iceServers ?? [],
+      refreshIceServers: async () => {
+        if (E2E_MEDIA) return null;
+        try {
+          return buildIceServers(import.meta.env, await fetchIceServers(session));
+        } catch (err) {
+          recordDiagnostic("ice-refresh-failed", { message: errorMessage(err) });
+          return null;
+        }
+      },
+      relayCapKbps: () => session.turnMaxBitrateKbps ?? undefined,
+      onConnectionState: (_peerId, state) => {
+        if (state === "connected") {
+          setError((current) => (current === P2P_BLOCKED_MESSAGE ? null : current));
+        }
+      },
+      onViewerGaveUp: () => setError(P2P_BLOCKED_MESSAGE),
+      onEnded: (reason, message) => {
+        setError(
+          reason === "source-closed"
+            ? "A janela ou tela compartilhada foi fechada."
+            : (message ?? "O compartilhamento foi interrompido."),
+        );
+        void stopShareRef.current();
+      },
+      onAudioError: () =>
+        setError("O vídeo está no ar, mas o áudio do sistema não pôde ser capturado."),
+      onDiagnostic: (event, details) => recordDiagnostic(event, details),
+    });
+    nativeSenderRef.current = nativeSender;
+    const shareReceiver = new ShareReceiver({
+      send: sendSignal,
+      configuration: () => roomIceConfig(session),
+      onStream: acceptRemoteStream,
+      onConnectionState: (peerId, state) => {
+        recordDiagnostic("native-share-receive-state", { peerId, state });
+        if (state === "connected") {
+          setError((current) => (current === P2P_BLOCKED_MESSAGE ? null : current));
+        }
+      },
+    });
+    shareReceiverRef.current = shareReceiver;
     if (E2E_MEDIA) {
       (window as unknown as { __telinhaDebug?: unknown }).__telinhaDebug = {
         peerIds: () => peerManager.peerIds(),
@@ -497,9 +593,9 @@ export function useTelinhaRoom(
         publishPeople();
         publishShares(localId);
         const joinedConnected = message.participant.connected ?? true;
-        if (joinedConnected && (cameraStreamRef.current !== null || audience.has(message.participant.id))) {
+        if (joinedConnected) {
           // A câmera vai para quem acabou de entrar; a tela, só se essa pessoa pediu para assistir.
-          await offerToViewer(message.participant.id);
+          await offerMediaTo(message.participant.id);
         }
         return;
       }
@@ -517,9 +613,7 @@ export function useTelinhaRoom(
           if (watching.has(message.participantId)) {
             sendSignal({ type: "watch-started", to: message.participantId });
           }
-          if (cameraStreamRef.current !== null || audience.has(message.participantId)) {
-            await offerToViewer(message.participantId);
-          }
+          await offerMediaTo(message.participantId);
         }
         publishPeople();
         return;
@@ -554,6 +648,7 @@ export function useTelinhaRoom(
         }
         // Só a tela sai do ar; a câmera dessa pessoa, se ligada, continua.
         dropRemoteStreams(message.participantId, "screen");
+        shareReceiver.close(message.participantId);
         watching.delete(message.participantId);
         publishPeople();
         publishShares(localId);
@@ -597,7 +692,12 @@ export function useTelinhaRoom(
           audience.add(message.from, message.name ?? viewer.name ?? "Alguém") === "added";
         publishWatchers(localId);
         if (added) playViewerJoined();
-        if (added || !peerManager.peerIds().includes(message.from)) {
+        if (nativeSenderRef.current?.isActive) {
+          // Pedido repetido (a oferta se perdeu): recomeça a conexão que não chegou a conectar.
+          if (added || !nativeSender.isConnected(message.from)) {
+            await offerNativeShare(message.from);
+          }
+        } else if (added || !peerManager.peerIds().includes(message.from)) {
           await offerToViewer(message.from);
         }
         return;
@@ -612,17 +712,31 @@ export function useTelinhaRoom(
       }
 
       if (message.type === "offer" && message.from && message.sdp) {
-        await peerManager.handleDescription(message.from, "offer", message.sdp);
+        if (message.channel === "share-out") {
+          await shareReceiver.handleOffer(message.from, message.sdp);
+        } else if (!message.channel) {
+          await peerManager.handleDescription(message.from, "offer", message.sdp);
+        }
         return;
       }
 
       if (message.type === "answer" && message.from && message.sdp) {
-        await peerManager.handleDescription(message.from, "answer", message.sdp);
+        if (message.channel === "share-in") {
+          await nativeSender.handleAnswer(message.from, message.sdp);
+        } else if (!message.channel) {
+          await peerManager.handleDescription(message.from, "answer", message.sdp);
+        }
         return;
       }
 
       if (message.type === "ice" && message.from && message.candidate) {
-        await peerManager.handleIce(message.from, message.candidate);
+        if (message.channel === "share-out") {
+          await shareReceiver.handleIce(message.from, message.candidate);
+        } else if (message.channel === "share-in") {
+          await nativeSender.handleIce(message.from, message.candidate);
+        } else {
+          await peerManager.handleIce(message.from, message.candidate);
+        }
       }
     };
 
@@ -713,12 +827,20 @@ export function useTelinhaRoom(
       }
     }, WATCH_CHECK_MS);
     const qualityTimer = window.setInterval(() => {
-      void peerManager.collectHealth().then((samples) => {
+      void Promise.all([peerManager.collectHealth(), shareReceiver.collectHealth()]).then(([common, received]) => {
         if (closed) return;
+        const samples = [...common, ...received, ...nativeSender.healthSamples()];
         setPeerHealth(samples);
+        if (nativeSender.isActive) {
+          void nativeSender
+            .stats()
+            .then((stats) => recordDiagnostic("native-share-stats", { ...stats }))
+            .catch(() => undefined);
+        }
         for (const sample of samples) {
           recordDiagnostic("peer-health", {
             peerId: sample.peerId,
+            channel: sample.channel,
             connectionState: sample.connectionState,
             roundTripTimeMs: sample.roundTripTimeMs,
             packetLossPercent: sample.packetLossPercent,
@@ -760,7 +882,11 @@ export function useTelinhaRoom(
         socket.send(JSON.stringify({ type: "leave" }));
       }
       closeAllPeers();
+      shareReceiver.closeAll();
+      void nativeSender.stop();
       if (peerManagerRef.current === peerManager) peerManagerRef.current = null;
+      if (nativeSenderRef.current === nativeSender) nativeSenderRef.current = null;
+      if (shareReceiverRef.current === shareReceiver) shareReceiverRef.current = null;
       socket?.close();
       wsRef.current = null;
       remoteStreams.clear();
@@ -788,6 +914,8 @@ export function useTelinhaRoom(
     offerToAudience,
     offerToEveryone,
     offerToViewer,
+    offerMediaTo,
+    offerNativeShare,
     reconcilePeer,
     publishPeople,
     publishShares,
@@ -819,14 +947,65 @@ export function useTelinhaRoom(
       preferH264Ref.current = quality.preferH264;
       shareBitrateRef.current = quality.maxBitrate ?? VIDEO_MAX_BITRATE;
 
+      // A fonte que a captura legada (getDisplayMedia) vai usar; muda se o envio nativo falhar.
+      let source = sourceId;
+
+      // Fonte escolhida no seletor próprio: a captura e o envio rodam em Rust.
+      if (isNativeSourceId(sourceId)) {
+        try {
+          const sender = nativeSenderRef.current;
+          if (!sender) throw new Error("A sala ainda não está conectada.");
+          const info = await sender.start(sourceId, quality);
+          recordDiagnostic("native-share-started", {
+            width: info.width,
+            height: info.height,
+            encoder: info.encoder,
+          });
+          // Sem MediaStream do app aqui: a prévia é montada à parte, só para a tela local.
+          try {
+            const preview = new NativePreview({
+              fetchFrame: async () => {
+                const frame = await nativePreviewFrame();
+                if (!frame) throw new Error("A prévia ainda não tem imagem");
+                return frame;
+              },
+            });
+            nativePreviewRef.current = preview;
+            previewStreamRef.current = preview.start(sourceId);
+          } catch (error) {
+            recordDiagnostic("native-preview-failed", { message: errorMessage(error) });
+          }
+          sharingRef.current = true;
+          const local = peopleRef.current.get(session.participantId);
+          if (local) local.isSharing = true;
+          setIsSharing(true);
+          publishPeople();
+          publishShares(session.participantId);
+          sendSignal({ type: "share-started" });
+          return;
+        } catch (error) {
+          await cleanupNativeShare();
+          const message = errorMessage(error);
+          // A fonte que sumiu é um problema da pessoa, não do envio nativo: avisa e para.
+          if (!shouldFallBackToWindowsPicker(message)) {
+            recordDiagnostic("share-start-failed", { message });
+            setError(message);
+            throw error;
+          }
+          // Sem encoder por GPU, falha de captura etc.: cai no seletor do Windows, como antes.
+          recordDiagnostic("native-share-fallback", { message });
+          source = WINDOWS_PICKER_ID;
+        }
+      }
+
       try {
-        const stream = await startDisplayMediaShare(quality, sourceId);
+        const stream = await startDisplayMediaShare(quality, source);
 
         if (
           needsNativeAudioLoopback(quality.includeAudio, stream.getAudioTracks().length)
         ) {
           await attachLoopbackAudio(
-            sourceId,
+            source,
             {
               unlistensRef,
               audioContextRef,

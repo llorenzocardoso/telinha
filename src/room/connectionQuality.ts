@@ -4,6 +4,8 @@ export type ConnectionQuality = "good" | "unstable" | "reconnecting" | "offline"
 
 export interface PeerHealthSample {
   peerId: string;
+  /** `native-share` na conexão do compartilhamento nativo; ausente na conexão comum. */
+  channel?: "native-share";
   connectionState?: RTCPeerConnectionState;
   roundTripTimeMs?: number;
   packetLossPercent?: number;

@@ -12,6 +12,8 @@ interface DialogProps {
   onClose: () => void;
   /** Painel mais estreito, para perguntas curtas. */
   compact?: boolean;
+  /** Painel mais largo, para uma grade de miniaturas. */
+  wide?: boolean;
   /** Abre acima de qualquer outro diálogo (por exemplo, a confirmação de fechar o app). */
   top?: boolean;
   /** Classe extra no rodapé, para ajustar a disposição dos botões. */
@@ -50,6 +52,7 @@ export function Dialog({
   footer,
   onClose,
   compact,
+  wide,
   top,
   footerClassName,
 }: DialogProps) {
@@ -108,7 +111,7 @@ export function Dialog({
     }}>
       <div
         ref={panelRef}
-        className={`ui-dialog ${compact ? "is-compact" : ""}`}
+        className={`ui-dialog ${compact ? "is-compact" : ""} ${wide ? "is-wide" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}

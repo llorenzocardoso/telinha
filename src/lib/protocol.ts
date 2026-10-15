@@ -19,12 +19,19 @@ export interface ClientAuthentication {
   appVersion: string;
 }
 
+/**
+ * Sinais da conexão do compartilhamento nativo (captura em Rust), separada da conexão comum que
+ * carrega câmera e lives legadas. `share-out` vem de quem transmite (oferta e ICE); `share-in`,
+ * de quem assiste (resposta e ICE).
+ */
+export type ShareChannel = "share-out" | "share-in";
+
 export type ClientSignal =
   | { type: "ping" | "leave" | "share-started" | "share-stopped" | "camera-stopped" }
   | { type: "camera-started"; streamId: string }
   | { type: "watch-started" | "watch-stopped"; to: string }
-  | { type: "offer" | "answer"; to: string; sdp: string }
-  | { type: "ice"; to: string; candidate: RTCIceCandidateInit };
+  | { type: "offer" | "answer"; to: string; sdp: string; channel?: ShareChannel }
+  | { type: "ice"; to: string; candidate: RTCIceCandidateInit; channel?: ShareChannel };
 
 export type ServerSignal =
   | { type: "pong" | "ping" }
@@ -38,8 +45,8 @@ export type ServerSignal =
   | { type: "camera-started"; participantId: string; streamId: string }
   | { type: "camera-stopped"; participantId: string }
   | { type: "watch-started" | "watch-stopped"; from: string; to: string; name?: string }
-  | { type: "offer" | "answer"; from: string; sdp: string }
-  | { type: "ice"; from: string; candidate: RTCIceCandidateInit };
+  | { type: "offer" | "answer"; from: string; sdp: string; channel?: ShareChannel }
+  | { type: "ice"; from: string; candidate: RTCIceCandidateInit; channel?: ShareChannel };
 
 export function parseServerSignal(raw: unknown): ServerSignal | null {
   let value: unknown = raw;
@@ -107,11 +114,26 @@ export function parseServerSignal(raw: unknown): ServerSignal | null {
     };
   }
   if ((value.type === "offer" || value.type === "answer") && isId(value.from) && typeof value.sdp === "string") {
-    return { type: value.type, from: value.from, sdp: value.sdp };
+    const channel = readChannel(value.channel);
+    if (channel === null) return null;
+    return { type: value.type, from: value.from, sdp: value.sdp, ...channel };
   }
   if (value.type === "ice" && isId(value.from) && isRecord(value.candidate)) {
-    return { type: value.type, from: value.from, candidate: value.candidate as RTCIceCandidateInit };
+    const channel = readChannel(value.channel);
+    if (channel === null) return null;
+    return {
+      type: value.type,
+      from: value.from,
+      candidate: value.candidate as RTCIceCandidateInit,
+      ...channel,
+    };
   }
+  return null;
+}
+
+function readChannel(value: unknown): { channel?: ShareChannel } | null {
+  if (value === undefined) return {};
+  if (value === "share-out" || value === "share-in") return { channel: value };
   return null;
 }
 

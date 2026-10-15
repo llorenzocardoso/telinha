@@ -2,6 +2,7 @@ mod audio;
 mod capture;
 mod discord;
 mod gpu;
+mod native_share;
 
 #[cfg(windows)]
 mod webview_permissions;
@@ -154,7 +155,20 @@ pub fn run() {
             capture::read_share_frame,
             audio::read_share_audio,
             capture::stop_share_capture,
-            capture::set_window_layout
+            capture::set_window_layout,
+            native_share::native_share_capability,
+            native_share::native_share_sources,
+            native_share::native_share_thumbnail,
+            native_share::native_share_icon,
+            native_share::native_share_dev_record,
+            native_share::native_share_start,
+            native_share::native_share_offer,
+            native_share::native_share_answer,
+            native_share::native_share_ice,
+            native_share::native_share_viewer_stop,
+            native_share::native_share_stop,
+            native_share::native_share_preview,
+            native_share::native_share_stats
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

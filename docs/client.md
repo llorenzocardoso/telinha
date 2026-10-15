@@ -54,7 +54,7 @@ Recebe `session` e devolve estado e ações da sala.
 | `share-started` / `share-stopped` | Marca `isSharing` e republica as lives (a live aparece sem mídia); ao parar, descarta a stream e fecha o peer se a pessoa não está na audiência |
 | `watch-started` | **Gatilho da oferta.** Se o usuário transmite e o espectador é conhecido e conectado: entra na audiência e recebe uma `offer` com as faixas locais (idempotente: repetir com a conexão viva só atualiza o nome) |
 | `watch-stopped` | Tira o espectador da audiência; se o usuário ainda assiste a ele, `stopSending` renegocia sem faixas; senão fecha a conexão |
-| `offer` / `answer` / `ice` | Repassa ao `PeerManager` |
+| `offer` / `answer` / `ice` | Sem `channel`: repassa ao `PeerManager`. Com `channel` (compartilhamento nativo): `share-out` → `ShareReceiver` (quem assiste), `share-in` → `NativeSender` (quem transmite); ver [Compartilhamento nativo](desktop.md#compartilhamento-nativo-experimental) |
 | `error` | `update-required` → fatal + abre atualização obrigatória; "Sala inválida" → tenta novo seat; demais → fatal |
 
 ### Reconexão

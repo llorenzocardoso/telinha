@@ -58,6 +58,29 @@ Rate limit por IP em memória, só nas rotas de criação e entrada. Atrás de p
 - Atualizações: pacotes assinados (minisign) e verificados com a chave pública embutida; o endpoint é HTTPS do GitHub.
 - O repositório não configura assinatura de código do Windows (só a assinatura do updater), então o SmartScreen pode alertar na instalação. Confirme se existe um certificado fora do repositório.
 
+## Compartilhamento nativo (experimental)
+
+O caminho nativo captura a tela em Rust, sem o seletor do sistema. Pontos para quem revisar:
+
+- **Quem pode iniciar uma captura.** Os comandos `native_share_*` são chamáveis pelo JavaScript do app. Diferente do
+  `getDisplayMedia`, não há um seletor do Windows que a pessoa precise confirmar: se o código do app fosse
+  comprometido (XSS), ele poderia começar a capturar e enviar a tela. Isso já valia para os comandos legados
+  (`start_share_capture` captura quadros e os entrega ao JS). A defesa é a mesma: CSP restrita, nenhum
+  `dangerouslySetInnerHTML` e nenhuma origem externa carregada no WebView. O app pede ao Windows para não desenhar a borda
+  amarela da captura (`IsBorderRequired = false`), mas ignora a recusa: só onde o sistema concede essa permissão a
+  apps comuns a borda some; sem ela, o Windows continua avisando que a tela está sendo capturada. Não foi
+  verificado em quais configurações cada caso ocorre.
+- **Entrada remota.** Os SDP e candidatos de outros participantes passam pelo servidor (SDP ≤ 60 KB, candidato ≤ 8 KB)
+  e são interpretados pelo libwebrtc, o mesmo analisador do Chrome. O servidor só repassa o campo `channel`
+  (`share-out`/`share-in`) depois de validá-lo; qualquer outro valor é recusado.
+- **Efeitos de quem assiste.** Cada espectador abre uma conexão e uma fonte no transmissor; o limite de 16 pessoas por
+  sala vale. Pedir a mesma conexão de novo a substitui, não a duplica.
+- **Arquivos.** `native_share_dev_record` só funciona em build de desenvolvimento e grava num nome fixo na pasta
+  temporária; em release devolve erro. Nenhum comando aceita caminho de arquivo.
+- **Áudio.** O microfone nunca é aberto pelo caminho nativo; o som vem do loopback da tela ou do aplicativo escolhido.
+- **Privacidade da lista.** Títulos de janelas e ícones só circulam entre o Rust e o WebView local; não são enviados ao
+  servidor nem entram no diagnóstico (o diagnóstico já filtra `name`, `url`, `ip` e `address`).
+
 ## Segredos
 
 | Segredo | Onde vive |

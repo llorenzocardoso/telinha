@@ -21,6 +21,7 @@ import {
   setWatchVolume,
 } from "../lib/watch";
 import { ScreenSharePicker } from "../components/ScreenSharePicker";
+import { isDiagnosticsShortcut } from "../lib/diagnosticsShortcut";
 import { CameraSettings } from "../components/CameraSettings";
 import { CameraGrid } from "../components/CameraGrid";
 import { CameraStrip } from "../components/CameraStrip";
@@ -429,6 +430,17 @@ export function RoomScreen({
 
   const copyWithToastRef = useRef(copyWithToast);
   copyWithToastRef.current = copyWithToast;
+
+  // Ctrl+Shift+D copia o diagnóstico a qualquer momento (útil ao comparar a qualidade de lives).
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (!isDiagnosticsShortcut(event)) return;
+      event.preventDefault();
+      void copyWithToastRef.current(copyDiagnostics(), "Diagnóstico copiado");
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [copyDiagnostics]);
 
   useEffect(() => {
     let cancelled = false;

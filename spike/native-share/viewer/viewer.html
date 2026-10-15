@@ -1,0 +1,76 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>native share viewer</title>
+<body style="margin:0;background:#000">
+<video id="v" autoplay muted playsinline style="width:480px"></video>
+<script>
+window.__samples = [];
+window.__error = null;
+// ?proxy=1: the harness exposes window.proxify(ip, port) -> local port of an impaired UDP path.
+// Our candidates are withheld from the sender (it learns our address from the checks that arrive
+// through the proxy) and the sender's candidate is replaced by the proxy's address.
+const useProxy = location.search.includes("proxy=1");
+(async () => {
+  try {
+    const pc = new RTCPeerConnection();
+    const tr = pc.addTransceiver("video", { direction: "recvonly" });
+    // Prefer H.264 (what the hardware encoder produces), as the app's PeerManager does.
+    const caps = RTCRtpReceiver.getCapabilities("video").codecs;
+    const rank = (c) => (c.mimeType === "video/H264" ? 0 : /rtx|red|ulpfec/i.test(c.mimeType) ? 20 : 10);
+    tr.setCodecPreferences([...caps].sort((x, y) => rank(x) - rank(y)));
+    const v = document.getElementById("v");
+    pc.ontrack = (e) => { v.srcObject = e.streams[0] ?? new MediaStream([e.track]); };
+    await pc.setLocalDescription(await pc.createOffer());
+    await new Promise((res) => {
+      if (pc.iceGatheringState === "complete") return res();
+      pc.onicegatheringstatechange = () => pc.iceGatheringState === "complete" && res();
+    });
+    const offer = pc.localDescription.toJSON();
+    if (useProxy) offer.sdp = offer.sdp.split("\r\n").filter((l) => !l.startsWith("a=candidate")).join("\r\n");
+    const r = await fetch("/offer", { method: "POST", body: JSON.stringify(offer) });
+    const text = await r.text();
+    if (!text) throw new Error("empty answer");
+    const answer = JSON.parse(text);
+    if (useProxy) {
+      const lines = answer.sdp.split("\r\n");
+      let done = false;
+      for (let i = 0; i < lines.length; i++) {
+        if (!lines[i].startsWith("a=candidate")) continue;
+        const f = lines[i].split(" ");
+        if (done || f[2].toLowerCase() !== "udp" || f[4].includes(":")) { lines[i] = null; continue; }
+        done = true;
+        f[5] = String(await window.proxify(f[4], Number(f[5])));
+        lines[i] = f.join(" ");
+      }
+      answer.sdp = lines.filter((l) => l !== null).join("\r\n");
+    }
+    console.log("answer candidates:", answer.sdp.split("\r\n").filter((l) => l.includes("candidate")).join(" | "));
+    pc.oniceconnectionstatechange = () => console.log("ice", pc.iceConnectionState);
+    await pc.setRemoteDescription(answer);
+
+    let prev = null;
+    setInterval(async () => {
+      const out = {};
+      (await pc.getStats()).forEach((s) => {
+        if (s.type === "inbound-rtp" && s.kind === "video") out.i = s;
+      });
+      if (out.i && prev) {
+        window.__samples.push({
+          decoded: out.i.framesDecoded - prev.framesDecoded,
+          recvMbps: ((out.i.bytesReceived - prev.bytesReceived) * 8) / 1e6,
+          res: `${out.i.frameWidth}x${out.i.frameHeight}`,
+          dropped: out.i.framesDropped,
+          freezes: out.i.freezeCount,
+          freezeDur: out.i.totalFreezesDuration,
+          lost: out.i.packetsLost,
+          nack: out.i.nackCount,
+          pli: out.i.pliCount,
+        });
+      }
+      if (out.i) prev = out.i;
+    }, 1000);
+  } catch (e) {
+    window.__error = String(e);
+  }
+})();
+</script>

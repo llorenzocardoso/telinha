@@ -358,6 +358,50 @@ describe("telinha server", () => {
     viewer.close();
   });
 
+  it("repassa o canal do compartilhamento nativo em oferta, resposta e ICE", async () => {
+    const { server, base } = await listen();
+    running = server;
+    const hostHttp = await postJson(`${base}/rooms`, { displayName: "Ana" });
+    const hostSession = hostHttp.data as unknown as RoomSession;
+    const viewerHttp = await postJson(`${base}/rooms/${hostSession.code}/join`, { displayName: "Bia" });
+    const viewerSession = viewerHttp.data as unknown as RoomSession;
+    const host = new WebSocket(signalingUrl(hostSession));
+    const viewer = new WebSocket(signalingUrl(viewerSession));
+    await waitForType(host, "hello");
+    await waitForType(viewer, "hello");
+
+    const offer = waitForType(viewer, "offer");
+    host.send(
+      JSON.stringify({ type: "offer", to: viewerSession.participantId, sdp: "v=0", channel: "share-out" }),
+    );
+    expect(await offer).toMatchObject({ from: hostSession.participantId, sdp: "v=0", channel: "share-out" });
+
+    const answer = waitForType(host, "answer");
+    viewer.send(
+      JSON.stringify({ type: "answer", to: hostSession.participantId, sdp: "v=0", channel: "share-in" }),
+    );
+    expect(await answer).toMatchObject({ channel: "share-in" });
+
+    const ice = waitForType(viewer, "ice");
+    host.send(
+      JSON.stringify({
+        type: "ice",
+        to: viewerSession.participantId,
+        candidate: { candidate: "candidate:1", sdpMid: "0", sdpMLineIndex: 0 },
+        channel: "share-out",
+      }),
+    );
+    expect(await ice).toMatchObject({ channel: "share-out" });
+
+    // Sem canal, nada é acrescentado: a conexão comum segue idêntica.
+    const plain = waitForType(viewer, "offer");
+    host.send(JSON.stringify({ type: "offer", to: viewerSession.participantId, sdp: "v=0" }));
+    expect(await plain).not.toHaveProperty("channel");
+
+    host.close();
+    viewer.close();
+  });
+
   it("encerra WebSocket que excede o limite de sinalização", async () => {
     const { server, base } = await listen();
     running = server;

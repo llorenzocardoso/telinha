@@ -1,5 +1,6 @@
 import type { ShareQuality } from "../hooks/useTelinhaRoom";
 import { isTauriRuntime } from "../lib/runtime";
+import { isNativeSourceId } from "./nativeShare";
 
 export function displayMediaOptions(
   quality: ShareQuality,
@@ -44,10 +45,15 @@ export class ShareCancelledError extends Error {
 
 export async function startDisplayMediaShare(
   quality: ShareQuality,
-  _sourceId: string,
+  sourceId: string,
 ): Promise<MediaStream> {
   if (import.meta.env.DEV && import.meta.env.VITE_E2E_MEDIA === "1") {
     return createSyntheticStream(quality.fps);
+  }
+  // Uma fonte do seletor próprio é capturada e enviada em Rust (NativeSender); o getDisplayMedia
+  // não sabe abri-la, e cair no seletor do Windows aqui trocaria a escolha da pessoa sem avisar.
+  if (isNativeSourceId(sourceId)) {
+    throw new Error("Esta fonte só pode ser compartilhada pelo envio nativo.");
   }
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getDisplayMedia) {
     throw new Error("A captura de tela do Windows não está disponível.");
