@@ -1,12 +1,12 @@
 /**
  * Prévia da própria live para quem transmite. O envio nativo não passa por uma `MediaStream` no
- * app, então a prévia é montada aqui: a cada instante busca-se um quadro reduzido da fonte (o
- * mesmo que alimenta as miniaturas do seletor) e ele é desenhado num canvas, cuja captura vira a
- * stream que a interface já sabe mostrar. É só uma prévia, com poucos quadros por segundo; quem
- * assiste recebe o vídeo de verdade.
+ * app, então a prévia é montada aqui: a cada instante busca-se o último quadro que o codificador
+ * recebeu (o que quem assiste vê, sem fotografar a janela de novo) e ele é desenhado num canvas,
+ * cuja captura vira a stream que a interface já sabe mostrar. É só uma prévia, com poucos quadros
+ * por segundo; quem assiste recebe o vídeo de verdade.
  */
 export interface NativePreviewOptions {
-  /** Devolve um quadro da fonte como data URL. */
+  /** Devolve o quadro mais recente como data URL; rejeita enquanto não houver um. */
   fetchFrame: (sourceId: string) => Promise<string>;
   /** Intervalo entre quadros, em ms. */
   intervalMs?: number;
@@ -48,7 +48,7 @@ export class NativePreview {
         }
         context.drawImage(image, 0, 0);
       } catch {
-        // Janela minimizada ou sumindo: fica o último quadro.
+        // Ainda sem quadro (ou janela minimizada, que não gera novos): fica o último.
       } finally {
         busy = false;
       }

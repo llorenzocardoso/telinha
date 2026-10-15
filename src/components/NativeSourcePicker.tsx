@@ -9,28 +9,27 @@ import {
 import { Button, SegmentedControl } from "./ui";
 
 interface NativeSourcePickerProps {
-  /** Id da fonte escolhida (`screen:…` ou `window:…`), ou null enquanto nada foi escolhido. */
+  /** Id da fonte destacada (`screen:…` ou `window:…`), ou null. */
   value: string | null;
-  onChange: (id: string) => void;
+  /** Escolher uma fonte já avança: a tela de qualidade vem depois, como no Discord. */
+  onPick: (source: NativeSource) => void;
 }
 
 type Kind = NativeSource["kind"];
 
-function describe(source: NativeSource): string {
+export function describeSource(source: NativeSource): string {
   const size = source.width && source.height ? `${source.width}×${source.height}` : "";
   return [source.kind === "window" ? source.app : null, size].filter(Boolean).join(" · ");
 }
 
-/** Grade de telas e janelas com miniaturas, no lugar do seletor do Windows. */
-export function NativeSourcePicker({ value, onChange }: NativeSourcePickerProps) {
+/** Grade de aplicativos e telas com miniaturas, no lugar do seletor do Windows. */
+export function NativeSourcePicker({ value, onPick }: NativeSourcePickerProps) {
   const [sources, setSources] = useState<NativeSource[] | null>(null);
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   const [icons, setIcons] = useState<Record<string, string>>({});
-  const [kind, setKind] = useState<Kind>("screen");
+  const [pickedKind, setPickedKind] = useState<Kind | null>(null);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
-  const valueRef = useRef(value);
-  valueRef.current = value;
 
   const refresh = useCallback(async () => {
     const mine = ++generation.current;
@@ -42,17 +41,15 @@ export function NativeSourcePicker({ value, onChange }: NativeSourcePickerProps)
       const found = await listNativeSources();
       if (cancelled()) return;
       setSources(found);
-      const { screens } = groupSources(found);
-      const stillThere = found.some((source) => source.id === valueRef.current);
-      if (!stillThere && screens[0]) onChange(screens[0].id);
       // Os ícones são pequenos e ajudam a achar a janela; vêm primeiro, as miniaturas depois.
       await loadIcons(
         found.filter((source) => source.kind === "window").map((source) => source.id),
         (id, url) => setIcons((current) => ({ ...current, [id]: url })),
         cancelled,
       );
+      // Uma janela minimizada não tem imagem para mostrar: o ícone fica no lugar.
       await loadThumbnails(
-        found.map((source) => source.id),
+        found.filter((source) => !source.minimized).map((source) => source.id),
         (id, url) => setThumbnails((current) => ({ ...current, [id]: url })),
         cancelled,
       );
@@ -61,7 +58,7 @@ export function NativeSourcePicker({ value, onChange }: NativeSourcePickerProps)
       setError(cause instanceof Error ? cause.message : String(cause));
       setSources([]);
     }
-  }, [onChange]);
+  }, []);
 
   useEffect(() => {
     void refresh();
@@ -71,6 +68,8 @@ export function NativeSourcePicker({ value, onChange }: NativeSourcePickerProps)
   }, [refresh]);
 
   const { screens, windows } = useMemo(() => groupSources(sources ?? []), [sources]);
+  // Abre nos aplicativos, como o Discord; sem nenhum, nas telas. Depois vale o que a pessoa clicar.
+  const kind: Kind = pickedKind ?? (windows.length > 0 ? "window" : "screen");
   const visible = kind === "screen" ? screens : windows;
 
   return (
@@ -84,16 +83,16 @@ export function NativeSourcePicker({ value, onChange }: NativeSourcePickerProps)
       <SegmentedControl
         label="Tipo de fonte"
         value={kind}
-        onChange={setKind}
+        onChange={setPickedKind}
         options={[
-          { value: "screen", label: `Telas (${screens.length})` },
-          { value: "window", label: `Janelas (${windows.length})` },
+          { value: "window", label: "Aplicativos" },
+          { value: "screen", label: "Telas" },
         ]}
       />
-      {sources === null && <p className="share-hint">Procurando telas e janelas…</p>}
+      {sources === null && <p className="share-hint">Procurando aplicativos e telas…</p>}
       {sources !== null && visible.length === 0 && !error && (
         <p className="share-hint">
-          {kind === "screen" ? "Nenhuma tela encontrada." : "Nenhuma janela aberta para compartilhar."}
+          {kind === "screen" ? "Nenhuma tela encontrada." : "Nenhum aplicativo aberto para compartilhar."}
         </p>
       )}
       {error && (
@@ -105,26 +104,30 @@ export function NativeSourcePicker({ value, onChange }: NativeSourcePickerProps)
         {visible.map((source) => {
           const selected = source.id === value;
           const thumbnail = thumbnails[source.id];
+          const icon = icons[source.id];
           return (
             <button
               key={source.id}
               type="button"
               className={`source-card${selected ? " is-selected" : ""}`}
               aria-pressed={selected}
-              onClick={() => onChange(source.id)}
+              onClick={() => onPick(source)}
             >
               <span className="source-thumb">
-                {thumbnail ? <img src={thumbnail} alt="" draggable={false} /> : null}
+                {thumbnail ? (
+                  <img src={thumbnail} alt="" draggable={false} />
+                ) : icon ? (
+                  <img className="source-thumb-icon" src={icon} alt="" draggable={false} />
+                ) : null}
+                {source.minimized && <span className="source-badge">Minimizada</span>}
               </span>
               <span className="source-title">
-                {icons[source.id] && (
-                  <img className="source-icon" src={icons[source.id]} alt="" draggable={false} />
-                )}
+                {icon && <img className="source-icon" src={icon} alt="" draggable={false} />}
                 <span className="source-name" title={source.name}>
                   {source.name}
                 </span>
               </span>
-              <span className="source-meta">{describe(source)}</span>
+              <span className="source-meta">{describeSource(source)}</span>
             </button>
           );
         })}

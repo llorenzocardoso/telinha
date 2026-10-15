@@ -27,18 +27,8 @@ export interface NativeSource {
   pid?: number | null;
   width: number;
   height: number;
-}
-
-export interface RecordSummary {
-  path: string;
-  width: number;
-  height: number;
-  encoder: string;
-  frames: number;
-  keyframes: number;
-  bytes: number;
-  avgLatencyMs: number;
-  ended: "stopped" | "source-closed";
+  /** Janela minimizada (um jogo depois do alt-tab): lista-se com o tamanho de quando abrir. */
+  minimized?: boolean;
 }
 
 export function nativeShareFlag(): boolean {
@@ -88,19 +78,17 @@ export function nativeThumbnail(id: string, width?: number): Promise<string> {
   return invoke<string>("native_share_thumbnail", { id, width: width ?? null });
 }
 
+/**
+ * Prévia da própria live: o último quadro que o codificador recebeu (o que quem assiste vê), em data
+ * URL. Pedir já faz o envio passar a produzi-la; devolve `null` até o primeiro quadro ficar pronto.
+ */
+export function nativePreviewFrame(): Promise<string | null> {
+  return invoke<string | null>("native_share_preview");
+}
+
 /** Ícone do aplicativo dono de uma janela (PNG em data URL); `null` para telas e sem ícone. */
 export function nativeIcon(id: string): Promise<string | null> {
   return invoke<string | null>("native_share_icon", { id });
-}
-
-export function devRecord(
-  id: string,
-  seconds: number,
-  maxHeight: number,
-  fps: number,
-  mbps: number,
-): Promise<RecordSummary> {
-  return invoke<RecordSummary>("native_share_dev_record", { id, seconds, maxHeight, fps, mbps });
 }
 
 export function groupSources(sources: NativeSource[]): {

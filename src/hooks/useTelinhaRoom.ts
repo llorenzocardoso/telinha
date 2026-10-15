@@ -25,7 +25,7 @@ import { createShareAudioPump, createShareAudioTrack } from "../media/shareAudio
 import {
   WINDOWS_PICKER_ID,
   isNativeSourceId,
-  nativeThumbnail,
+  nativePreviewFrame,
   shouldFallBackToWindowsPicker,
 } from "../media/nativeShare";
 import { NativePreview } from "../room/nativePreview";
@@ -68,7 +68,6 @@ function roomIceConfig(session: RoomSession): RTCConfiguration {
 
 const VIDEO_MAX_BITRATE = 10_000_000;
 /** Largura dos quadros da prévia da própria live nativa. */
-const NATIVE_PREVIEW_WIDTH = 960;
 
 const P2P_BLOCKED_MESSAGE =
   "Não foi possível conectar direto. A rede pode estar bloqueando o P2P.";
@@ -965,7 +964,11 @@ export function useTelinhaRoom(
           // Sem MediaStream do app aqui: a prévia é montada à parte, só para a tela local.
           try {
             const preview = new NativePreview({
-              fetchFrame: (id) => nativeThumbnail(id, NATIVE_PREVIEW_WIDTH),
+              fetchFrame: async () => {
+                const frame = await nativePreviewFrame();
+                if (!frame) throw new Error("A prévia ainda não tem imagem");
+                return frame;
+              },
             });
             nativePreviewRef.current = preview;
             previewStreamRef.current = preview.start(sourceId);

@@ -5,12 +5,11 @@ import { isTauriRuntime } from "../lib/runtime";
 import { ShareCancelledError } from "../media/displayShare";
 import {
   WINDOWS_PICKER_ID,
-  devRecord,
   getNativeCapability,
   nativeShareFlag,
   setNativeShareFlag,
   type NativeCapability,
-  type RecordSummary,
+  type NativeSource,
 } from "../media/nativeShare";
 import {
   FPS_HINTS,
@@ -26,7 +25,7 @@ import {
   type ShareFps,
   type ShareHeight,
 } from "../media/shareQuality";
-import { NativeSourcePicker } from "./NativeSourcePicker";
+import { NativeSourcePicker, describeSource } from "./NativeSourcePicker";
 import { Button, Dialog, SegmentedControl, Switch } from "./ui";
 
 const AUDIO_KEY = "telinha-share-audio";
@@ -55,9 +54,8 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
   // Experimental: seletor próprio com miniaturas, só quando o interruptor está ligado.
   const [nativeFlag, setNativeFlag] = useState(() => nativeShareFlag());
   const [capability, setCapability] = useState<NativeCapability | null>(null);
-  const [sourceId, setSourceId] = useState<string | null>(null);
-  const [recording, setRecording] = useState(false);
-  const [recorded, setRecorded] = useState<RecordSummary | null>(null);
+  // Com o seletor próprio são duas etapas: primeiro a fonte, depois a qualidade.
+  const [source, setSource] = useState<NativeSource | null>(null);
   const nativeReady = nativeFlag && capability?.available === true;
 
   useEffect(() => {
@@ -98,7 +96,7 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
     setError(null);
     try {
       await onShare(
-        nativeReady && sourceId ? sourceId : WINDOWS_PICKER_ID,
+        nativeReady && source ? source.id : WINDOWS_PICKER_ID,
         shareQualityFrom(choice, {
           includeAudio,
           preferH264: Boolean(gpuInfo?.available),
@@ -113,123 +111,120 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
     }
   }
 
-  async function record() {
-    if (!sourceId) return;
-    setRecording(true);
-    setRecorded(null);
-    setError(null);
-    try {
-      const quality = shareQualityFrom(choice, { includeAudio: false, preferH264: true });
-      setRecorded(
-        await devRecord(
-          sourceId,
-          5,
-          quality.maxHeight ?? 0,
-          quality.fps,
-          Math.round((quality.maxBitrate ?? 8_000_000) / 1_000_000),
-        ),
-      );
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setRecording(false);
-    }
-  }
-
   function toggleNativePicker(next: boolean) {
     setNativeShareFlag(next);
     setNativeFlag(next);
     setCapability(null);
-    setSourceId(null);
+    setSource(null);
     setError(null);
   }
 
   const preset = presetFor(choice);
+  const choosingSource = nativeReady && !source;
 
   return (
     <Dialog
       title="Compartilhar tela"
       summary={shareSummary(choice)}
       onClose={onCancel}
+      wide={choosingSource}
       footer={
         <>
           <Button variant="ghost" disabled={sharing} onClick={onCancel}>
             Cancelar
           </Button>
-          <Button
-            variant="primary"
-            size="lg"
-            disabled={sharing || (nativeReady && !sourceId)}
-            onClick={() => void share()}
-          >
-            {sharing ? "Abrindo..." : nativeReady ? "Compartilhar" : "Escolher janela"}
-          </Button>
+          {nativeReady && source && (
+            <Button variant="outline" disabled={sharing} onClick={() => setSource(null)}>
+              Voltar
+            </Button>
+          )}
+          {!choosingSource && (
+            <Button variant="primary" size="lg" disabled={sharing} onClick={() => void share()}>
+              {sharing ? "Abrindo..." : nativeReady ? "Compartilhar" : "Escolher janela"}
+            </Button>
+          )}
         </>
       }
     >
-      {nativeReady && <NativeSourcePicker value={sourceId} onChange={setSourceId} />}
+      {choosingSource && <NativeSourcePicker value={null} onPick={setSource} />}
 
-      <section className="share-field">
-        <header>
-          <strong>Atalhos rápidos</strong>
-          {/* "Personalizado" aparece sozinho quando a combinação não bate com um atalho. */}
-          <span data-testid="share-preset-state">{preset ? preset.label : "Personalizado"}</span>
-        </header>
-        <div className="share-presets">
-          {SHARE_PRESETS.map((item) => (
-            <Button
-              key={item.id}
-              variant={preset?.id === item.id ? "primary" : "outline"}
-              onClick={() => choose({ height: item.height, fps: item.fps })}
-            >
-              {item.label}
-            </Button>
-          ))}
-        </div>
-      </section>
+      {nativeReady && source && (
+        <section className="share-chosen" aria-label="Fonte escolhida">
+          <strong>{source.name}</strong>
+          <span>{describeSource(source)}</span>
+          {source.minimized && (
+            <span>
+              Está minimizada: a live só mostra imagem enquanto a janela estiver aberta.
+            </span>
+          )}
+        </section>
+      )}
 
-      <section className="share-field">
-        <header>
-          <strong>Resolução</strong>
-        </header>
-        <SegmentedControl
-          label="Resolução"
-          value={choice.height}
-          onChange={(height) => choose({ height })}
-          options={SHARE_HEIGHTS.map((item) => ({ value: item.value, label: item.label }))}
-        />
-      </section>
+      {!choosingSource && (
+        <>
+          <section className="share-field">
+            <header>
+              <strong>Atalhos rápidos</strong>
+              {/* "Personalizado" aparece sozinho quando a combinação não bate com um atalho. */}
+              <span data-testid="share-preset-state">{preset ? preset.label : "Personalizado"}</span>
+            </header>
+            <div className="share-presets">
+              {SHARE_PRESETS.map((item) => (
+                <Button
+                  key={item.id}
+                  variant={preset?.id === item.id ? "primary" : "outline"}
+                  onClick={() => choose({ height: item.height, fps: item.fps })}
+                >
+                  {item.label}
+                </Button>
+              ))}
+            </div>
+          </section>
 
-      <section className="share-field">
-        <header>
-          <strong>Taxa de quadros</strong>
-        </header>
-        <SegmentedControl
-          label="Taxa de quadros"
-          value={choice.fps}
-          onChange={(fps) => choose({ fps })}
-          options={SHARE_FPS.map((item) => ({ value: item.value, label: item.label }))}
-        />
-        <p className="share-hint">{FPS_HINTS[choice.fps]}</p>
-      </section>
+          <section className="share-field">
+            <header>
+              <strong>Resolução</strong>
+            </header>
+            <SegmentedControl
+              label="Resolução"
+              value={choice.height}
+              onChange={(height) => choose({ height })}
+              options={SHARE_HEIGHTS.map((item) => ({ value: item.value, label: item.label }))}
+            />
+          </section>
 
-      <Switch
-        label="Incluir som do computador"
-        hint={
-          nativeReady
-            ? "Tela: tudo menos o Discord. Janela: só o som desse aplicativo."
-            : nativeRuntime
-              ? "O Discord fica de fora quando está aberto."
-              : "Inclui áudio quando a fonte escolhida permitir."
-        }
-        checked={includeAudio}
-        onChange={(next) => {
-          setIncludeAudio(next);
-          localStorage.setItem(AUDIO_KEY, next ? "1" : "0");
-        }}
-      />
+          <section className="share-field">
+            <header>
+              <strong>Taxa de quadros</strong>
+            </header>
+            <SegmentedControl
+              label="Taxa de quadros"
+              value={choice.fps}
+              onChange={(fps) => choose({ fps })}
+              options={SHARE_FPS.map((item) => ({ value: item.value, label: item.label }))}
+            />
+            <p className="share-hint">{FPS_HINTS[choice.fps]}</p>
+          </section>
 
-      {nativeRuntime && (
+          <Switch
+            label="Incluir som do computador"
+            hint={
+              nativeReady
+                ? "Tela: tudo menos o Discord. Janela: só o som desse aplicativo."
+                : nativeRuntime
+                  ? "O Discord fica de fora quando está aberto."
+                  : "Inclui áudio quando a fonte escolhida permitir."
+            }
+            checked={includeAudio}
+            onChange={(next) => {
+              setIncludeAudio(next);
+              localStorage.setItem(AUDIO_KEY, next ? "1" : "0");
+            }}
+          />
+        </>
+      )}
+
+      {nativeRuntime && !(nativeReady && source) && (
         <Switch
           label="Seletor de telas próprio (experimental)"
           hint="Escolha telas e janelas aqui dentro, com miniaturas e envio direto pelo app."
@@ -250,30 +245,6 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
           Compartilhamento nativo indisponível ({capability.reason ?? "sem codificador por GPU"});
           usando o seletor do Windows.
         </p>
-      )}
-
-      {nativeReady && import.meta.env.DEV && (
-        <div className="share-dev">
-          <span>
-            Experimental · {capability?.encoder}. Teste de captura: grava a fonte escolhida por 5 s
-            na pasta temporária, sem enviar nada.
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!sourceId || recording}
-            onClick={() => void record()}
-          >
-            {recording ? "Gravando…" : "Gravar 5 s (teste)"}
-          </Button>
-          {recorded && (
-            <span data-testid="share-dev-result">
-              {recorded.frames} quadros, {recorded.keyframes} keyframe(s),{" "}
-              {(recorded.bytes / 1_000_000).toFixed(1)} MB, {recorded.width}×{recorded.height},{" "}
-              {recorded.avgLatencyMs.toFixed(1)} ms · {recorded.path}
-            </span>
-          )}
-        </div>
       )}
 
       {error && (
