@@ -87,6 +87,10 @@ export class NativeSender {
   /** Candidatos que o Rust gerou antes de a oferta sair: vão atrás dela, nunca na frente. */
   private readonly held = new Map<string, RTCIceCandidateInit[]>();
   private readonly offered = new Set<string>();
+  /** Espectadores cuja resposta já foi aplicada no Rust; só depois disso um candidato dele vale. */
+  private readonly answered = new Set<string>();
+  /** Candidatos do espectador que chegaram antes de a resposta dele ser aplicada. */
+  private readonly early = new Map<string, RTCIceCandidateInit[]>();
   /** Espectadores cuja conexão já chegou a "connected" no Rust. */
   private readonly connected = new Set<string>();
   private readonly states = new Map<string, RTCPeerConnectionState>();
@@ -139,6 +143,8 @@ export class NativeSender {
     this.offered.delete(peerId);
     this.held.delete(peerId);
     this.connected.delete(peerId);
+    this.answered.delete(peerId);
+    this.early.delete(peerId);
     const sdp = await invoke<string>("native_share_offer", {
       peerId,
       iceServers: this.freshServers ?? this.options.iceServers(),
@@ -153,17 +159,40 @@ export class NativeSender {
 
   async handleAnswer(peerId: string, sdp: string): Promise<void> {
     if (!this.viewers.has(peerId)) return;
+    // A sinalização chega em paralelo: os candidatos que vierem colados na resposta esperam por ela.
     await invoke("native_share_answer", { peerId, sdp });
+    this.answered.add(peerId);
+    const waiting = this.early.get(peerId) ?? [];
+    this.early.delete(peerId);
+    for (const candidate of waiting) await this.addCandidate(peerId, candidate);
   }
 
   async handleIce(peerId: string, candidate: RTCIceCandidateInit): Promise<void> {
     if (!this.viewers.has(peerId) || !candidate.candidate) return;
-    await invoke("native_share_ice", {
-      peerId,
-      candidate: candidate.candidate,
-      sdpMid: candidate.sdpMid ?? null,
-      sdpMlineIndex: candidate.sdpMLineIndex ?? null,
-    });
+    if (!this.answered.has(peerId)) {
+      const queue = this.early.get(peerId) ?? [];
+      queue.push(candidate);
+      this.early.set(peerId, queue);
+      return;
+    }
+    await this.addCandidate(peerId, candidate);
+  }
+
+  /** Um candidato recusado não derruba a conexão: os outros caminhos seguem valendo. */
+  private async addCandidate(peerId: string, candidate: RTCIceCandidateInit): Promise<void> {
+    try {
+      await invoke("native_share_ice", {
+        peerId,
+        candidate: candidate.candidate,
+        sdpMid: candidate.sdpMid ?? null,
+        sdpMlineIndex: candidate.sdpMLineIndex ?? null,
+      });
+    } catch (error) {
+      this.options.onDiagnostic?.("native-share-ice-rejected", {
+        peerId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   stopViewer(peerId: string): void {
@@ -196,6 +225,8 @@ export class NativeSender {
     this.viewers.clear();
     this.connected.clear();
     this.offered.clear();
+    this.answered.clear();
+    this.early.clear();
     this.held.clear();
     this.states.clear();
     this.routes.clear();
@@ -210,6 +241,8 @@ export class NativeSender {
   private forget(peerId: string): void {
     this.connected.delete(peerId);
     this.offered.delete(peerId);
+    this.answered.delete(peerId);
+    this.early.delete(peerId);
     this.held.delete(peerId);
     this.states.delete(peerId);
     this.routes.delete(peerId);
