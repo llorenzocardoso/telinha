@@ -167,6 +167,7 @@ pub fn run() {
             native_share::native_share_ice,
             native_share::native_share_viewer_stop,
             native_share::native_share_stop,
+            native_share::native_share_preview,
             native_share::native_share_stats
         ])
         .on_window_event(|window, event| {

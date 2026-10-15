@@ -13,8 +13,8 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetClientRect, GetMessageW, MoveWindow,
     PostMessageW, PostQuitMessage, RegisterClassW, SetTimer, ShowWindow, TranslateMessage,
-    CS_HREDRAW, CS_VREDRAW, MSG, SW_SHOWNOACTIVATE, WM_CLOSE, WM_DESTROY, WM_PAINT, WM_TIMER,
-    WNDCLASSW, WS_OVERLAPPEDWINDOW,
+    CS_HREDRAW, CS_VREDRAW, MSG, SW_MINIMIZE, SW_RESTORE, SW_SHOWNOACTIVATE, WM_CLOSE, WM_DESTROY,
+    WM_PAINT, WM_TIMER, WNDCLASSW, WS_OVERLAPPEDWINDOW,
 };
 
 pub struct TestWindow {
@@ -128,6 +128,15 @@ impl Remote {
 
     pub fn resize(self, width: i32, height: i32) {
         let _ = unsafe { MoveWindow(self.hwnd(), 120, 120, width, height, true) };
+    }
+
+    /// Minimizes it the way alt-tabbing out of a fullscreen game does.
+    pub fn minimize(self) {
+        let _ = unsafe { ShowWindow(self.hwnd(), SW_MINIMIZE) };
+    }
+
+    pub fn restore(self) {
+        let _ = unsafe { ShowWindow(self.hwnd(), SW_RESTORE) };
     }
 
     pub fn close(self) {

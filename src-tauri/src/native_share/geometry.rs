@@ -38,6 +38,22 @@ pub fn excluded_by_style(ex_style: u32) -> bool {
     ex_style & (WS_EX_TRANSPARENT | WS_EX_NOACTIVATE) != 0
 }
 
+/// Whether a top-level window belongs in the list of things to share. Untitled windows and Telinha
+/// itself are left out. A minimized window (a game after alt-tab) stays: Windows reports a tiny
+/// stub size for it, so the size only counts while the window is not minimized.
+pub fn offer_window(title: &str, app_name: &str, minimized: bool, width: u32, height: u32) -> bool {
+    if title.trim().is_empty() {
+        return false;
+    }
+    if format!("{title} {app_name}")
+        .to_lowercase()
+        .contains("telinha")
+    {
+        return false;
+    }
+    minimized || (width >= 40 && height >= 40)
+}
+
 /// Rounds down to an even number; H.264 NV12 needs even dimensions.
 pub fn even(value: u32) -> u32 {
     value & !1
@@ -125,6 +141,26 @@ mod tests {
         assert!(excluded_by_style(0x0800_0000));
         // A tool window is still shareable (picture-in-picture windows use it).
         assert!(!excluded_by_style(0x0000_0080));
+    }
+
+    #[test]
+    fn minimized_windows_are_offered_but_junk_is_not() {
+        // A game after alt-tab: minimized, 160x28 stub (the real values for VALORANT).
+        assert!(offer_window(
+            "VALORANT  ",
+            "VALORANT-Win64-Shipping.exe",
+            true,
+            160,
+            28
+        ));
+        assert!(offer_window("Notas", "notepad.exe", false, 800, 600));
+        // Not minimized and tiny: a helper window.
+        assert!(!offer_window("Bar", "x.exe", false, 30, 20));
+        assert!(!offer_window("  ", "x.exe", true, 800, 600));
+        assert!(!offer_window("", "x.exe", false, 800, 600));
+        // Telinha never offers itself, minimized or not.
+        assert!(!offer_window("Telinha", "telinha.exe", true, 160, 28));
+        assert!(!offer_window("Sala", "Telinha.exe", false, 800, 600));
     }
 
     #[test]

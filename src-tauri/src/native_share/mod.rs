@@ -10,6 +10,8 @@ mod geometry;
 mod icons;
 #[cfg(windows)]
 mod pipeline;
+#[cfg(windows)]
+mod preview;
 mod rates;
 mod sdp;
 #[cfg(windows)]
@@ -30,6 +32,8 @@ pub struct NativeSource {
     pub pid: Option<u32>,
     pub width: u32,
     pub height: u32,
+    /// Minimized (a game after alt-tab): there is no picture to show until it is opened again.
+    pub minimized: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -113,24 +117,58 @@ fn list_sources() -> Result<Vec<NativeSource>, String> {
             pid: None,
             width: monitor.width().unwrap_or(0),
             height: monitor.height().unwrap_or(0),
+            minimized: false,
         });
     }
 
     for window in Window::all().map_err(|e| e.to_string())? {
-        if crate::capture::should_skip_window(&window) || is_overlay(window.id().unwrap_or(0)) {
+        let handle = window.id().unwrap_or(0);
+        if skip_window(&window) || is_overlay(handle) {
             continue;
         }
+        // A minimized window (a game after alt-tab) is listed with the size it will have restored.
+        let minimized = window.is_minimized().unwrap_or(false);
+        let (width, height) = if minimized {
+            match restored_size(handle) {
+                Some(size) => size,
+                None => continue,
+            }
+        } else {
+            (window.width().unwrap_or(0), window.height().unwrap_or(0))
+        };
         sources.push(NativeSource {
-            id: format!("window:{}", window.id().unwrap_or_default()),
+            id: format!("window:{handle}"),
             kind: "window",
             name: window.title().unwrap_or_default(),
             app: window.app_name().ok().filter(|name| !name.is_empty()),
             pid: window.pid().ok(),
-            width: window.width().unwrap_or(0),
-            height: window.height().unwrap_or(0),
+            width,
+            height,
+            minimized,
         });
     }
     Ok(sources)
+}
+
+/// Unlike the legacy list, this keeps minimized windows (alt-tabbed games).
+fn skip_window(window: &Window) -> bool {
+    !geometry::offer_window(
+        &window.title().unwrap_or_default(),
+        &window.app_name().unwrap_or_default(),
+        window.is_minimized().unwrap_or(false),
+        window.width().unwrap_or(0),
+        window.height().unwrap_or(0),
+    )
+}
+
+#[cfg(windows)]
+fn restored_size(handle: u32) -> Option<(u32, u32)> {
+    pipeline::restored_size_if_minimized(geometry::SourceId::Window(handle))
+}
+
+#[cfg(not(windows))]
+fn restored_size(_handle: u32) -> Option<(u32, u32)> {
+    None
 }
 
 /// Whether the window is a click-through or never-activated overlay.
@@ -368,6 +406,19 @@ pub fn native_share_viewer_stop(peer_id: String) {
 pub async fn native_share_stop() {
     #[cfg(windows)]
     sender::stop().await;
+}
+
+/// The sharer's own preview (see `sender::preview`); `None` while there is no picture yet.
+#[tauri::command]
+pub fn native_share_preview() -> Result<Option<String>, String> {
+    #[cfg(windows)]
+    {
+        sender::preview()
+    }
+    #[cfg(not(windows))]
+    {
+        Err(UNSUPPORTED.into())
+    }
 }
 
 #[tauri::command]
@@ -640,6 +691,120 @@ mod hardware_tests {
         resizer.join().unwrap();
         assert!(summary.frames > 30, "{} frames", summary.frames);
         assert_eq!(summary.ended, "stopped");
+    }
+
+    /// Prints what the list offers on this desktop (read only). Run with `--nocapture` to see why a
+    /// window is or is not there.
+    #[test]
+    #[ignore = "reads the real desktop"]
+    fn prints_the_sources_on_this_desktop() {
+        for source in list_sources().expect("sources") {
+            println!(
+                "{} | {} | {}x{} | {} | {}",
+                source.id,
+                source.kind,
+                source.width,
+                source.height,
+                source.app.unwrap_or_default(),
+                source.name
+            );
+        }
+    }
+
+    /// The sharer's own preview is the picture the encoder gets: letterboxed at the encode size,
+    /// colors right, and it keeps the last frame while the window is minimized (where a fresh
+    /// capture of the window would only return its 160x28 title bar).
+    #[test]
+    #[ignore = "needs a GPU and an interactive desktop"]
+    fn the_preview_is_what_the_encoder_gets_and_survives_minimizing() {
+        use std::sync::atomic::Ordering;
+        use std::sync::Arc;
+
+        let window = TestWindow::open(900, 600);
+        let remote = window.remote();
+        let control = Arc::new(pipeline::Control::default());
+        control.preview_wanted.store(true, Ordering::Relaxed);
+        let stopper = control.clone();
+        let minimizer = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            remote.minimize();
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            stopper.stop.store(true, Ordering::Relaxed);
+        });
+        let mut size = (0, 0);
+        pipeline::run(
+            pipeline::Options {
+                source: geometry::SourceId::parse(&window.id()).unwrap(),
+                max_height: 720,
+                fps: 30,
+                bitrate: 4_000_000,
+            },
+            control.clone(),
+            |info| size = (info.width, info.height),
+            |_| {},
+        )
+        .expect("pipeline");
+        minimizer.join().unwrap();
+
+        let url = control
+            .preview
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("a preview was produced");
+        let jpeg = base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            url.strip_prefix("data:image/jpeg;base64,")
+                .expect("a JPEG data URL"),
+        )
+        .expect("base64");
+        let image = image::load_from_memory(&jpeg)
+            .expect("a decodable JPEG")
+            .to_rgba8();
+        // Same picture as the encoder: the encode frame, not the 160x28 stub of a minimized window.
+        assert_eq!(image.dimensions(), size);
+        let bright = image
+            .pixels()
+            .filter(|p| p[0] as u32 + p[1] as u32 + p[2] as u32 > 60)
+            .count();
+        assert!(
+            bright * 4 > image.pixels().len(),
+            "the preview is mostly black"
+        );
+        let _ = std::fs::write(
+            std::env::temp_dir().join("telinha-native-share-preview.jpg"),
+            &jpeg,
+        );
+    }
+
+    /// A game that is alt-tabbed out of fullscreen is minimized and people still want to share it.
+    /// Sharing it must encode at the size it has when restored (not at the 160x28 stub Windows
+    /// reports while minimized), and frames must flow once the window comes back.
+    #[test]
+    #[ignore = "needs a GPU and an interactive desktop"]
+    fn a_minimized_window_is_shared_at_its_restored_size() {
+        let window = TestWindow::open(900, 600);
+        let remote = window.remote();
+        remote.minimize();
+        std::thread::sleep(std::time::Duration::from_millis(600));
+
+        let restorer = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            remote.restore();
+        });
+        let summary = record(&window.id(), 7, 1080, 30, 4).expect("recording");
+        restorer.join().unwrap();
+        assert!(
+            summary.width >= 400 && summary.height >= 300,
+            "encoded at {}x{}",
+            summary.width,
+            summary.height
+        );
+        assert!(
+            summary.frames > 20,
+            "only {} frames after the window was restored",
+            summary.frames
+        );
     }
 
     /// The whole sending path against a real libwebrtc viewer in the same process: capture a

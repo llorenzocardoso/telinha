@@ -6,6 +6,7 @@
 //! network. The caller steers the encoder through [`Control`].
 
 use super::geometry::{encode_size, letterbox, SourceId};
+use super::preview::nv12_to_rgba;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -35,10 +36,95 @@ use windows::Win32::System::WinRT::Direct3D11::{
     CreateDirect3D11DeviceFromDXGIDevice, IDirect3DDxgiInterfaceAccess,
 };
 use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
-use windows::Win32::UI::WindowsAndMessaging::IsWindow;
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetWindowPlacement, IsIconic, IsWindow, WINDOWPLACEMENT,
+};
+
+/// The size a minimized window has once restored. Windows reports a 160x28 stub while a window is
+/// minimized (what alt-tabbing out of a fullscreen game does), and encoding at that size would
+/// ruin the share. `None` for screens, for windows that are not minimized and for degenerate sizes.
+pub fn restored_size_if_minimized(source: SourceId) -> Option<(u32, u32)> {
+    let SourceId::Window(_) = source else {
+        return None;
+    };
+    let window = HWND(source.handle() as *mut _);
+    if !unsafe { IsIconic(window) }.as_bool() {
+        return None;
+    }
+    let mut placement = WINDOWPLACEMENT {
+        length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+        ..Default::default()
+    };
+    unsafe { GetWindowPlacement(window, &mut placement) }.ok()?;
+    let rect = placement.rcNormalPosition;
+    let (width, height) = (
+        (rect.right - rect.left).max(0) as u32,
+        (rect.bottom - rect.top).max(0) as u32,
+    );
+    (width >= 40 && height >= 40).then_some((width, height))
+}
 
 /// Capture textures live in a ring so the encoder can still read one while capture fills another.
 const RING: usize = 8;
+/// How often the preview is refreshed, and how wide it is at most.
+const PREVIEW_EVERY: Duration = Duration::from_millis(450);
+const PREVIEW_WIDTH: u32 = 960;
+
+/// A CPU-readable NV12 texture the size of the encode frame.
+fn preview_staging(
+    device: &ID3D11Device,
+    width: u32,
+    height: u32,
+) -> Result<ID3D11Texture2D, String> {
+    let desc = D3D11_TEXTURE2D_DESC {
+        Width: width,
+        Height: height,
+        MipLevels: 1,
+        ArraySize: 1,
+        Format: DXGI_FORMAT_NV12,
+        SampleDesc: DXGI_SAMPLE_DESC {
+            Count: 1,
+            Quality: 0,
+        },
+        Usage: D3D11_USAGE_STAGING,
+        BindFlags: 0,
+        CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+        MiscFlags: 0,
+    };
+    let mut texture = None;
+    ctx(
+        unsafe { device.CreateTexture2D(&desc, None, Some(&mut texture)) },
+        "textura da prévia",
+    )?;
+    some(texture, "textura da prévia ausente")
+}
+
+/// Copies one NV12 slot to the CPU and converts it for the screen.
+fn read_preview(
+    gpu: &Gpu,
+    staging: &ID3D11Texture2D,
+    source: &ID3D11Texture2D,
+    width: u32,
+    height: u32,
+) -> Result<image::RgbaImage, String> {
+    unsafe {
+        gpu.context.CopyResource(staging, source);
+        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+        ctx(
+            gpu.context
+                .Map(staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped)),
+            "lendo a prévia",
+        )?;
+        let pitch = mapped.RowPitch as usize;
+        // Luma plane, then the interleaved chroma plane right after it.
+        let data =
+            std::slice::from_raw_parts(mapped.pData as *const u8, pitch * height as usize * 3 / 2);
+        let image = nv12_to_rgba(data, pitch, width, height, PREVIEW_WIDTH);
+        gpu.context.Unmap(staging, 0);
+        Ok(image)
+    }
+}
+
 /// A static screen produces no capture frames; the last one is re-submitted at this interval so
 /// the receiver keeps getting media (and loss recovery keeps working).
 const KEEPALIVE: Duration = Duration::from_millis(500);
@@ -59,6 +145,10 @@ pub struct Control {
     /// 0 = nothing pending; otherwise the new constant bitrate in bits per second.
     pub bitrate: AtomicU32,
     pub keyframe: AtomicBool,
+    /// Set by whoever shows the sharer's own preview; the pipeline then keeps `preview` fresh.
+    pub preview_wanted: AtomicBool,
+    /// The latest preview as a JPEG data URL: the frame the encoder was given, shrunk.
+    pub preview: Mutex<Option<String>>,
 }
 
 pub struct Frame {
@@ -494,7 +584,8 @@ pub fn run(
 
     let item = create_item(opts.source)?;
     let size = ctx(item.Size(), "tamanho da fonte")?;
-    let (src_w, src_h) = (size.Width.max(2) as u32, size.Height.max(2) as u32);
+    let (src_w, src_h) = restored_size_if_minimized(opts.source)
+        .unwrap_or((size.Width.max(2) as u32, size.Height.max(2) as u32));
     let (dst_w, dst_h) = encode_size(src_w, src_h, opts.max_height);
 
     // --- video processor: BGRA (any size) -> letterboxed NV12 (fixed size) ---------------------
@@ -785,6 +876,9 @@ pub fn run(
     let mut last_input = Instant::now();
     let mut sample_time = 0i64;
     let mut last_alive_check = Instant::now();
+    let mut preview_texture: Option<ID3D11Texture2D> = None;
+    let mut preview_failed = false;
+    let mut last_preview: Option<Instant> = None;
     let mut result: Result<(), String> = Ok(());
     'run: while !control.stop.load(Ordering::Relaxed) && !closed.load(Ordering::Relaxed) {
         apply_control(&encoder, &control, &mut applied_bitrate);
@@ -862,6 +956,34 @@ pub fn run(
             last_slot = Some(slot);
             last_input = Instant::now();
             progressed = true;
+        }
+
+        // The sharer's own preview: the picture the encoder was last given, so it never needs a
+        // second capture of the window (and a minimized window just keeps its last frame).
+        if !preview_failed
+            && control.preview_wanted.load(Ordering::Relaxed)
+            && last_preview.is_none_or(|at| at.elapsed() >= PREVIEW_EVERY)
+        {
+            if let Some(slot) = last_slot {
+                last_preview = Some(Instant::now());
+                if preview_texture.is_none() {
+                    preview_texture = preview_staging(&gpu.device, dst_w, dst_h).ok();
+                    preview_failed = preview_texture.is_none();
+                }
+                if let Some(staging) = &preview_texture {
+                    match read_preview(&gpu, staging, &nv12[slot].0, dst_w, dst_h) {
+                        Ok(image) => {
+                            // JPEG encoding stays off the encoder loop.
+                            let control = control.clone();
+                            std::thread::spawn(move || {
+                                let url = crate::capture::jpeg_data_url(&image, 72);
+                                *control.preview.lock().unwrap() = Some(url);
+                            });
+                        }
+                        Err(_) => preview_failed = true,
+                    }
+                }
+            }
         }
 
         if !progressed {

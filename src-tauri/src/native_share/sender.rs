@@ -693,6 +693,18 @@ pub fn stop_viewer(peer_id: &str) {
     }
 }
 
+/// The sharer's own preview: the latest frame the encoder was given, as a JPEG data URL. Asking
+/// for it is what makes the pipeline produce it; `None` until the first one is ready.
+pub fn preview() -> Result<Option<String>, String> {
+    let session = current()?;
+    session
+        .control
+        .preview_wanted
+        .store(true, Ordering::Relaxed);
+    let latest = session.control.preview.lock().unwrap().clone();
+    Ok(latest)
+}
+
 pub fn stats() -> Result<SenderStats, String> {
     let session = current()?;
     let frames = session.frames.load(Ordering::Relaxed);
