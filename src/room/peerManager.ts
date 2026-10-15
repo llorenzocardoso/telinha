@@ -173,6 +173,29 @@ export class PeerManager {
     }
   }
 
+  /**
+   * Troca a imagem de uma faixa que já está sendo enviada, sem renegociar: quem assiste não perde
+   * a conexão. Devolve em quantas conexões a troca valeu.
+   */
+  async replaceTrack(
+    previous: MediaStreamTrack,
+    next: MediaStreamTrack | null,
+  ): Promise<number> {
+    let replaced = 0;
+    for (const { connection } of this.peers.values()) {
+      for (const sender of connection.getSenders()) {
+        if (sender.track !== previous) continue;
+        try {
+          await sender.replaceTrack(next);
+          replaced += 1;
+        } catch {
+          // A conexão pode fechar enquanto a faixa é trocada.
+        }
+      }
+    }
+    return replaced;
+  }
+
   /** Sem argumento remove tudo; com uma lista remove só aquelas faixas (tela ou câmera). */
   removeLocalTracks(tracks?: readonly MediaStreamTrack[]): void {
     const wanted = tracks ? new Set(tracks) : null;

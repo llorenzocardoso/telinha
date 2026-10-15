@@ -37,6 +37,7 @@ Código em [src-tauri/](../src-tauri/). Crate `telinha` (lib `telinha_lib`), ide
 | `native_share_start(id, maxHeight, fps, maxMbps, includeAudio, relayCapKbps?)` | Idem | Começa a capturar e codificar (e, com `includeAudio`, a capturar o som); devolve `{width, height, encoder}`. Nada vai à rede até haver espectador |
 | `native_share_offer(peerId, iceServers, relayOnly)` | Idem | Abre a conexão de um espectador e devolve o SDP da oferta |
 | `native_share_answer(peerId, sdp)`, `native_share_ice(peerId, candidate, sdpMid, sdpMlineIndex)` | Idem | Resposta e candidatos ICE do espectador |
+| `native_share_switch(id)` | Idem | Aponta a live em andamento para outra fonte sem encerrá-la: reinicia só a captura e o codificador (o novo abre com um quadro-chave, no tamanho da nova fonte) e leva a captura de som junto; as conexões dos espectadores não são tocadas. Se a nova fonte não abrir, a anterior volta ao ar e o comando devolve o motivo. Uma troca por vez |
 | `native_share_viewer_stop(peerId)`, `native_share_stop` | Idem | Fecha um espectador / encerra captura e todas as conexões |
 | `native_share_stats` | Idem | `{viewers, targetKbps, framesPerSecond, sentKbps}` |
 
@@ -110,6 +111,14 @@ caminho comum respeita); se a rota voltar a ser direta, o limite sai. O evento `
 credenciais ICE novas (`GET /rooms/:code/ice-servers`), na 2ª forçando `relay` se a sala tem TURN. Depois de
 2 tentativas desiste e mostra a mensagem de P2P bloqueado. Conectar zera a conta. Quem assiste só responde às
 ofertas, então não precisa de lógica própria.
+
+**Trocar a fonte no meio da live.** O botão "Trocar o que compartilha" (na dock, enquanto se transmite) abre
+`SwitchSourceDialog`. Numa live nativa mostra a grade de aplicativos e telas e a escolha já troca
+(`NativeSender.switchSource` → `native_share_switch`); a qualidade e o som escolhidos ao começar continuam, e quem
+assiste não reconecta nem pede nada (o tamanho da imagem pode mudar, e o decodificador acompanha no quadro-chave).
+Numa live do WebView, `useTelinhaRoom.changeShare` abre o seletor do Windows, pega a faixa de vídeo nova e a põe no
+lugar da antiga com `RTCRtpSender.replaceTrack` (`PeerManager.replaceTrack`), sem renegociar. A prévia de quem
+transmite é refeita para a nova fonte.
 
 **Prévia da própria live.** Quem transmite vê um tile com a própria live. Como o envio nativo não tem
 `MediaStream` no app, `room/nativePreview.ts` pede a cada 500 ms `native_share_preview` e desenha o resultado num

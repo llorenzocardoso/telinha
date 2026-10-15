@@ -142,6 +142,8 @@ pub struct Options {
 #[derive(Default)]
 pub struct Control {
     pub stop: AtomicBool,
+    /// Ends only the capture loop (a source switch); `stop` ends the whole share.
+    pub restart: AtomicBool,
     /// 0 = nothing pending; otherwise the new constant bitrate in bits per second.
     pub bitrate: AtomicU32,
     pub keyframe: AtomicBool,
@@ -880,7 +882,10 @@ pub fn run(
     let mut preview_failed = false;
     let mut last_preview: Option<Instant> = None;
     let mut result: Result<(), String> = Ok(());
-    'run: while !control.stop.load(Ordering::Relaxed) && !closed.load(Ordering::Relaxed) {
+    'run: while !control.stop.load(Ordering::Relaxed)
+        && !control.restart.load(Ordering::Relaxed)
+        && !closed.load(Ordering::Relaxed)
+    {
         apply_control(&encoder, &control, &mut applied_bitrate);
         let mut progressed = false;
 

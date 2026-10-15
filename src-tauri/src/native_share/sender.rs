@@ -125,11 +125,21 @@ struct Session {
     control: Arc<Control>,
     /// Desktop audio, when the share carries it.
     audio: Option<NativeAudioSource>,
-    audio_stop: Arc<AtomicBool>,
+    /// Stops the current audio capture thread (a new flag for each one, so a switch can restart it).
+    audio_stop: Mutex<Arc<AtomicBool>>,
+    audio_thread: Mutex<Option<JoinHandle<()>>>,
+    emit: Emit,
+    max_height: u32,
+    fps: u32,
+    /// What is being captured now, to go back to when a switch fails.
+    source: Mutex<Current>,
+    /// Serializes switches: one at a time.
+    switching: AtomicBool,
+    pipeline: Mutex<Option<JoinHandle<()>>>,
     max_bitrate: u64,
     relay_cap: Option<u64>,
-    /// Size of every encoded frame.
-    size: (u32, u32),
+    /// Size of every encoded frame; changes when the source does.
+    size: Arc<Mutex<(u32, u32)>>,
     feeds: Feeds,
     viewers: Mutex<HashMap<String, Viewer>>,
     frames: Arc<AtomicU64>,
@@ -138,6 +148,14 @@ struct Session {
     target: Arc<AtomicU64>,
     threads: Mutex<Vec<JoinHandle<()>>>,
     last_stats: Mutex<(Instant, u64, u64)>,
+}
+
+/// The source a share is capturing.
+#[derive(Clone)]
+struct Current {
+    id: String,
+    source: SourceId,
+    window_pid: Option<u32>,
 }
 
 static SESSION: Mutex<Option<Arc<Session>>> = Mutex::new(None);
@@ -161,6 +179,151 @@ fn current() -> Result<Arc<Session>, String> {
         .ok_or_else(|| "Nenhum compartilhamento nativo em andamento".to_string())
 }
 
+/// What a capture/encode thread shares with the rest of the session.
+#[derive(Clone)]
+struct Wiring {
+    emit: Emit,
+    control: Arc<Control>,
+    feeds: Feeds,
+    frames: Arc<AtomicU64>,
+    bytes: Arc<AtomicU64>,
+    frame_size: Arc<Mutex<(u32, u32)>>,
+}
+
+/// Starts the capture/encode thread for one source. The first outcome (the encode size, or why it
+/// could not start) goes to `started_tx`; what happens when it ends is reported as an event.
+fn spawn_pipeline(
+    wiring: Wiring,
+    options: pipeline::Options,
+    started_tx: mpsc::Sender<Result<NativeStartInfo, String>>,
+) -> Result<JoinHandle<()>, String> {
+    let Wiring {
+        emit,
+        control,
+        feeds,
+        frames,
+        bytes,
+        frame_size,
+    } = wiring;
+    let started = Arc::new(AtomicBool::new(false));
+    std::thread::Builder::new()
+        .name("native-share-pipeline".into())
+        .spawn(move || {
+            let size_for_frames = frame_size.clone();
+            let started_for_info = started_tx.clone();
+            let started_flag = started.clone();
+            let result = pipeline::run(
+                options,
+                control,
+                |info| {
+                    *frame_size.lock().unwrap() = (info.width, info.height);
+                    started_flag.store(true, Ordering::Relaxed);
+                    let _ = started_for_info.send(Ok(NativeStartInfo {
+                        width: info.width,
+                        height: info.height,
+                        encoder: info.encoder,
+                    }));
+                },
+                |frame| {
+                    // Every viewer has its own source; all of them get the same access unit.
+                    let targets: Vec<Arc<Feed>> = feeds.lock().unwrap().values().cloned().collect();
+                    if targets.is_empty() {
+                        return;
+                    }
+                    let (width, height) = *size_for_frames.lock().unwrap();
+                    let encoded = EncodedVideoFrame {
+                        codec: EncodedVideoCodec::H264,
+                        payload: &frame.data,
+                        timestamp_us: 0,
+                        frame_type: if frame.key {
+                            EncodedFrameType::Key
+                        } else {
+                            EncodedFrameType::Delta
+                        },
+                        resolution: VideoResolution { width, height },
+                        frame_metadata: None,
+                    };
+                    let mut delivered = false;
+                    for feed in &targets {
+                        delivered |= feed.source.capture_encoded_frame(&encoded);
+                    }
+                    if delivered {
+                        frames.fetch_add(1, Ordering::Relaxed);
+                        bytes.fetch_add(frame.data.len() as u64, Ordering::Relaxed);
+                    }
+                },
+            );
+            match result {
+                Err(message) if !started.load(Ordering::Relaxed) => {
+                    let _ = started_tx.send(Err(message));
+                }
+                Err(message) => {
+                    send_event(
+                        &emit,
+                        "native-share-ended",
+                        EndedPayload {
+                            reason: "error",
+                            message: Some(message),
+                        },
+                    );
+                }
+                Ok(End::SourceClosed) => {
+                    send_event(
+                        &emit,
+                        "native-share-ended",
+                        EndedPayload {
+                            reason: "source-closed",
+                            message: None,
+                        },
+                    );
+                }
+                Ok(End::Stopped) => {}
+            }
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// Starts the capture of the desktop sound for a source, feeding `sink`.
+fn spawn_audio(
+    emit: Emit,
+    sink: NativeAudioSource,
+    current: &Current,
+    stop: Arc<AtomicBool>,
+) -> JoinHandle<()> {
+    audio::start_audio_tap(
+        current.id.clone(),
+        current.window_pid,
+        stop,
+        move |bytes| {
+            let frame = AudioFrame {
+                data: audio::f32_bytes_to_i16(&bytes).into(),
+                sample_rate: audio::TAP_SAMPLE_RATE,
+                num_channels: audio::TAP_CHANNELS,
+                samples_per_channel: audio::TAP_FRAMES,
+            };
+            // Paces itself on the source's queue; a closed track just drops the block.
+            let _ = tauri::async_runtime::block_on(sink.capture_frame(&frame));
+        },
+        move |message| {
+            send_event(
+                &emit,
+                "native-share-audio-error",
+                AudioErrorPayload { message },
+            );
+        },
+    )
+}
+
+/// Waits for a pipeline's first outcome without blocking the async runtime.
+async fn first_outcome(
+    started_rx: mpsc::Receiver<Result<NativeStartInfo, String>>,
+) -> Result<NativeStartInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || started_rx.recv_timeout(START_TIMEOUT))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|_| "A captura não iniciou a tempo".to_string())?
+}
+
 pub async fn start(emit: Emit, request: StartRequest) -> Result<NativeStartInfo, String> {
     stop().await;
 
@@ -168,171 +331,77 @@ pub async fn start(emit: Emit, request: StartRequest) -> Result<NativeStartInfo,
     let feeds: Feeds = Arc::default();
     let frames = Arc::new(AtomicU64::new(0));
     let bytes = Arc::new(AtomicU64::new(0));
-    let started = Arc::new(AtomicBool::new(false));
     let frame_size = Arc::new(Mutex::new((0u32, 0u32)));
     let (started_tx, started_rx) = mpsc::channel::<Result<NativeStartInfo, String>>();
 
     let initial_bitrate = START_BITRATE.min(request.max_bitrate).max(MIN_BITRATE);
-    let pipeline_thread = {
-        let (control, feeds, frames, bytes, started, frame_size) = (
-            control.clone(),
-            feeds.clone(),
-            frames.clone(),
-            bytes.clone(),
-            started.clone(),
-            frame_size.clone(),
-        );
-        let emit = emit.clone();
-        std::thread::Builder::new()
-            .name("native-share-pipeline".into())
-            .spawn(move || {
-                let size_for_frames = frame_size.clone();
-                let started_for_info = started_tx.clone();
-                let result = pipeline::run(
-                    pipeline::Options {
-                        source: request.source,
-                        max_height: request.max_height,
-                        fps: request.fps,
-                        bitrate: initial_bitrate as u32,
-                    },
-                    control,
-                    |info| {
-                        *frame_size.lock().unwrap() = (info.width, info.height);
-                        started.store(true, Ordering::Relaxed);
-                        let _ = started_for_info.send(Ok(NativeStartInfo {
-                            width: info.width,
-                            height: info.height,
-                            encoder: info.encoder,
-                        }));
-                    },
-                    |frame| {
-                        // Every viewer has its own source; all of them get the same access unit.
-                        let targets: Vec<Arc<Feed>> =
-                            feeds.lock().unwrap().values().cloned().collect();
-                        if targets.is_empty() {
-                            return;
-                        }
-                        let (width, height) = *size_for_frames.lock().unwrap();
-                        let encoded = EncodedVideoFrame {
-                            codec: EncodedVideoCodec::H264,
-                            payload: &frame.data,
-                            timestamp_us: 0,
-                            frame_type: if frame.key {
-                                EncodedFrameType::Key
-                            } else {
-                                EncodedFrameType::Delta
-                            },
-                            resolution: VideoResolution { width, height },
-                            frame_metadata: None,
-                        };
-                        let mut delivered = false;
-                        for feed in &targets {
-                            delivered |= feed.source.capture_encoded_frame(&encoded);
-                        }
-                        if delivered {
-                            frames.fetch_add(1, Ordering::Relaxed);
-                            bytes.fetch_add(frame.data.len() as u64, Ordering::Relaxed);
-                        }
-                    },
-                );
-                match result {
-                    Err(message) if !started.load(Ordering::Relaxed) => {
-                        let _ = started_tx.send(Err(message));
-                    }
-                    Err(message) => {
-                        send_event(
-                            &emit,
-                            "native-share-ended",
-                            EndedPayload {
-                                reason: "error",
-                                message: Some(message),
-                            },
-                        );
-                    }
-                    Ok(End::SourceClosed) => {
-                        send_event(
-                            &emit,
-                            "native-share-ended",
-                            EndedPayload {
-                                reason: "source-closed",
-                                message: None,
-                            },
-                        );
-                    }
-                    Ok(End::Stopped) => {}
-                }
-            })
-            .map_err(|e| e.to_string())?
-    };
+    let pipeline_thread = spawn_pipeline(
+        Wiring {
+            emit: emit.clone(),
+            control: control.clone(),
+            feeds: feeds.clone(),
+            frames: frames.clone(),
+            bytes: bytes.clone(),
+            frame_size: frame_size.clone(),
+        },
+        pipeline::Options {
+            source: request.source,
+            max_height: request.max_height,
+            fps: request.fps,
+            bitrate: initial_bitrate as u32,
+        },
+        started_tx,
+    )?;
 
-    let wait = tauri::async_runtime::spawn_blocking(move || started_rx.recv_timeout(START_TIMEOUT))
-        .await
-        .map_err(|e| e.to_string())?;
-    let info = match wait {
-        Ok(Ok(info)) => info,
-        Ok(Err(message)) => {
+    let info = match first_outcome(started_rx).await {
+        Ok(info) => info,
+        Err(message) => {
+            control.stop.store(true, Ordering::Relaxed);
             let _ = pipeline_thread.join();
             return Err(message);
         }
-        Err(_) => {
-            control.stop.store(true, Ordering::Relaxed);
-            let _ = pipeline_thread.join();
-            return Err("A captura não iniciou a tempo".into());
-        }
     };
 
+    let current = Current {
+        id: request.source_id.clone(),
+        source: request.source,
+        window_pid: request.window_pid,
+    };
     let audio_stop = Arc::new(AtomicBool::new(false));
-    let mut threads = vec![pipeline_thread];
-    let audio = if request.include_audio {
+    let (audio, audio_thread) = if request.include_audio {
         let source = NativeAudioSource::new(
             AudioSourceOptions::default(),
             audio::TAP_SAMPLE_RATE,
             audio::TAP_CHANNELS,
             AUDIO_QUEUE_MS,
         );
-        let sink = source.clone();
-        let error_emit = emit.clone();
-        threads.push(audio::start_audio_tap(
-            request.source_id.clone(),
-            request.window_pid,
-            audio_stop.clone(),
-            move |bytes| {
-                let frame = AudioFrame {
-                    data: audio::f32_bytes_to_i16(&bytes).into(),
-                    sample_rate: audio::TAP_SAMPLE_RATE,
-                    num_channels: audio::TAP_CHANNELS,
-                    samples_per_channel: audio::TAP_FRAMES,
-                };
-                // Paces itself on the source's queue; a closed track just drops the block.
-                let _ = tauri::async_runtime::block_on(sink.capture_frame(&frame));
-            },
-            move |message| {
-                send_event(
-                    &error_emit,
-                    "native-share-audio-error",
-                    AudioErrorPayload { message },
-                );
-            },
-        ));
-        Some(source)
+        let thread = spawn_audio(emit.clone(), source.clone(), &current, audio_stop.clone());
+        (Some(source), Some(thread))
     } else {
-        None
+        (None, None)
     };
 
     let target = Arc::new(AtomicU64::new(initial_bitrate));
     let session = Arc::new(Session {
         control: control.clone(),
         audio,
-        audio_stop,
+        audio_stop: Mutex::new(audio_stop),
+        audio_thread: Mutex::new(audio_thread),
+        emit,
+        max_height: request.max_height,
+        fps: request.fps,
+        source: Mutex::new(current),
+        switching: AtomicBool::new(false),
+        pipeline: Mutex::new(Some(pipeline_thread)),
         max_bitrate: request.max_bitrate.max(MIN_BITRATE),
         relay_cap: request.relay_cap,
-        size: (info.width, info.height),
+        size: frame_size,
         feeds,
         viewers: Mutex::new(HashMap::new()),
         frames,
         bytes,
         target: target.clone(),
-        threads: Mutex::new(threads),
+        threads: Mutex::new(Vec::new()),
         last_stats: Mutex::new((Instant::now(), 0, 0)),
     });
 
@@ -461,11 +530,9 @@ pub async fn offer(
         })));
     }
 
+    let (width, height) = *session.size.lock().unwrap();
     let feed = Arc::new(Feed {
-        source: NativeVideoSource::new_encoded(VideoResolution {
-            width: session.size.0,
-            height: session.size.1,
-        }),
+        source: NativeVideoSource::new_encoded(VideoResolution { width, height }),
         target: AtomicU64::new(0),
     });
     let track = factory().create_video_track("telinha-screen", feed.source.clone());
@@ -721,6 +788,134 @@ pub fn stats() -> Result<SenderStats, String> {
     Ok(result)
 }
 
+/// What a switch needs to know about the new source.
+pub struct SwitchRequest {
+    pub source_id: String,
+    pub source: SourceId,
+    pub window_pid: Option<u32>,
+}
+
+/// Points a running share at another source without touching any viewer connection: the capture
+/// and encoder are restarted, the viewers keep receiving on the same tracks (the new encoder opens
+/// with a keyframe at the new size). If the new source cannot start, the old one is put back.
+pub async fn switch_source(request: SwitchRequest) -> Result<NativeStartInfo, String> {
+    let session = current()?;
+    if session.switching.swap(true, Ordering::AcqRel) {
+        return Err("Já existe uma troca em andamento".into());
+    }
+    let result = switch_inner(&session, request).await;
+    session.switching.store(false, Ordering::Release);
+    result
+}
+
+async fn switch_inner(
+    session: &Arc<Session>,
+    request: SwitchRequest,
+) -> Result<NativeStartInfo, String> {
+    // Stop only the capture: `restart` ends the pipeline loop, `stop` would end the whole share.
+    session.control.restart.store(true, Ordering::Relaxed);
+    let old = session.pipeline.lock().unwrap().take();
+    if let Some(thread) = old {
+        let _ = tauri::async_runtime::spawn_blocking(move || thread.join()).await;
+    }
+    session.control.restart.store(false, Ordering::Relaxed);
+    // The old window's last frame must not be shown as the new one's preview.
+    *session.control.preview.lock().unwrap() = None;
+
+    let previous = session.source.lock().unwrap().clone();
+    let wanted = Current {
+        id: request.source_id,
+        source: request.source,
+        window_pid: request.window_pid,
+    };
+    let bitrate = session.target.load(Ordering::Relaxed).max(MIN_BITRATE) as u32;
+    let attempt = |current: &Current| {
+        let (started_tx, started_rx) = mpsc::channel::<Result<NativeStartInfo, String>>();
+        let spawned = spawn_pipeline(
+            Wiring {
+                emit: session.emit.clone(),
+                control: session.control.clone(),
+                feeds: session.feeds.clone(),
+                frames: session.frames.clone(),
+                bytes: session.bytes.clone(),
+                frame_size: session.size.clone(),
+            },
+            pipeline::Options {
+                source: current.source,
+                max_height: session.max_height,
+                fps: session.fps,
+                bitrate,
+            },
+            started_tx,
+        );
+        (spawned, started_rx)
+    };
+
+    let (spawned, started_rx) = attempt(&wanted);
+    let outcome = match spawned {
+        Ok(thread) => match first_outcome(started_rx).await {
+            Ok(info) => Ok((thread, info)),
+            Err(message) => {
+                session.control.restart.store(true, Ordering::Relaxed);
+                let _ = thread.join();
+                session.control.restart.store(false, Ordering::Relaxed);
+                Err(message)
+            }
+        },
+        Err(message) => Err(message),
+    };
+
+    match outcome {
+        Ok((thread, info)) => {
+            *session.pipeline.lock().unwrap() = Some(thread);
+            *session.source.lock().unwrap() = wanted.clone();
+            session.control.keyframe.store(true, Ordering::Relaxed);
+            retarget_audio(session, &wanted).await;
+            Ok(info)
+        }
+        Err(message) => {
+            // Back to what was being shared; if even that is gone, the share is over.
+            let (spawned, started_rx) = attempt(&previous);
+            let restored = match spawned {
+                Ok(thread) => first_outcome(started_rx).await.map(|_| thread),
+                Err(error) => Err(error),
+            };
+            match restored {
+                Ok(thread) => *session.pipeline.lock().unwrap() = Some(thread),
+                Err(_) => send_event(
+                    &session.emit,
+                    "native-share-ended",
+                    EndedPayload {
+                        reason: "error",
+                        message: Some(message.clone()),
+                    },
+                ),
+            }
+            Err(message)
+        }
+    }
+}
+
+/// Moves the desktop-sound capture to the new source (per-app audio follows the window).
+async fn retarget_audio(session: &Arc<Session>, current: &Current) {
+    let Some(sink) = session.audio.clone() else {
+        return;
+    };
+    session
+        .audio_stop
+        .lock()
+        .unwrap()
+        .store(true, Ordering::Relaxed);
+    let old = session.audio_thread.lock().unwrap().take();
+    if let Some(thread) = old {
+        let _ = tauri::async_runtime::spawn_blocking(move || thread.join()).await;
+    }
+    let stop = Arc::new(AtomicBool::new(false));
+    *session.audio_stop.lock().unwrap() = stop.clone();
+    let thread = spawn_audio(session.emit.clone(), sink, current, stop);
+    *session.audio_thread.lock().unwrap() = Some(thread);
+}
+
 /// Stops capture, closes every viewer connection and waits for the worker threads.
 pub async fn stop() {
     let session = SESSION.lock().unwrap().take();
@@ -728,12 +923,18 @@ pub async fn stop() {
         return;
     };
     session.control.stop.store(true, Ordering::Relaxed);
-    session.audio_stop.store(true, Ordering::Relaxed);
+    session
+        .audio_stop
+        .lock()
+        .unwrap()
+        .store(true, Ordering::Relaxed);
     session.feeds.lock().unwrap().clear();
     for (_, viewer) in session.viewers.lock().unwrap().drain() {
         viewer.pc.close();
     }
-    let threads: Vec<_> = session.threads.lock().unwrap().drain(..).collect();
+    let mut threads: Vec<_> = session.threads.lock().unwrap().drain(..).collect();
+    threads.extend(session.pipeline.lock().unwrap().take());
+    threads.extend(session.audio_thread.lock().unwrap().take());
     let _ = tauri::async_runtime::spawn_blocking(move || {
         for thread in threads {
             let _ = thread.join();

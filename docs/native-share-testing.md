@@ -76,6 +76,7 @@ mesma rede**, alternando só o interruptor: uma rodada com o seletor próprio **
 | 9 | Parar e começar de novo | Compartilhar, parar, compartilhar de novo, 5 vezes | Nenhuma falha, nenhum travamento do app |
 | 10 | Maratona | Uma live de 30 minutos ou mais | Memória, CPU/GPU, atraso, nenhuma degradação com o tempo |
 | 11 | Jogo minimizado | Com um jogo em tela cheia (por exemplo o Valorant), dar alt-tab para o Telinha e escolhê-lo na lista (aparece com o selo "Minimizada"); depois voltar ao jogo | O jogo está na lista? A live mostra imagem ao voltar ao jogo? Qual a fluidez em jogo? (jogos com anti-cheat e tela cheia exclusiva **não foram testados**) |
+| 12 | Trocar a fonte | Com alguém assistindo, usar "Trocar o que compartilha" para ir de uma janela a outra e a uma tela, várias vezes; tentar também uma fonte que acabou de fechar | Quem assiste não reconecta e a imagem volta em segundos (muda de tamanho, com barras)? Uma troca que falha mantém a anterior no ar? O som acompanha a janela nova? |
 
 ### Coletar números
 
@@ -137,7 +138,7 @@ cd src-tauri && cargo test native_share -- --ignored --test-threads=1   # GPU + 
 
 ## Limitações conhecidas
 
-- Só H.264; sem plano B de codec. Resolução e fps não mudam no meio da live.
+- Só H.264; sem plano B de codec. Resolução e fps não mudam no meio da live (a fonte pode mudar, com "Trocar o que compartilha").
 - A prévia da própria live é de poucos quadros por segundo.
 - Testado apenas com NVIDIA, 1080p, na mesma máquina (loopback) e com Chrome/WebView2 como espectador.
 - Um cliente antigo não assiste uma live nativa: ao publicar, suba `MIN_APP_VERSION`.

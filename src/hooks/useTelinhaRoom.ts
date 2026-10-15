@@ -112,6 +112,9 @@ export function useTelinhaRoom(
   const sharingRef = useRef(false);
   const preferH264Ref = useRef(true);
   const shareBitrateRef = useRef(VIDEO_MAX_BITRATE);
+  const shareQualityRef = useRef<ShareQuality | null>(null);
+  /** A live em andamento sai pelo envio nativo (seletor próprio), não pelo WebView. */
+  const [nativeShare, setNativeShare] = useState(false);
   const stopShareRef = useRef<() => Promise<void>>(async () => undefined);
   const stopCameraRef = useRef<() => void>(() => undefined);
   const reseatCountRef = useRef(0);
@@ -314,6 +317,7 @@ export function useTelinhaRoom(
 
     sharingRef.current = false;
     setIsSharing(false);
+    setNativeShare(false);
   }, []);
 
   const releaseCamera = useCallback(() => {
@@ -946,6 +950,7 @@ export function useTelinhaRoom(
       setError(null);
       preferH264Ref.current = quality.preferH264;
       shareBitrateRef.current = quality.maxBitrate ?? VIDEO_MAX_BITRATE;
+      shareQualityRef.current = quality;
 
       // A fonte que a captura legada (getDisplayMedia) vai usar; muda se o envio nativo falhar.
       let source = sourceId;
@@ -976,6 +981,7 @@ export function useTelinhaRoom(
             recordDiagnostic("native-preview-failed", { message: errorMessage(error) });
           }
           sharingRef.current = true;
+          setNativeShare(true);
           const local = peopleRef.current.get(session.participantId);
           if (local) local.isSharing = true;
           setIsSharing(true);
@@ -1053,6 +1059,83 @@ export function useTelinhaRoom(
       sendSignal,
       session,
     ],
+  );
+
+  /**
+   * Troca o que a live mostra sem encerrá-la nem pedir que ninguém reconecte. Na live nativa o Rust
+   * reinicia a captura; na do WebView a faixa de vídeo nova entra no lugar da antiga (replaceTrack).
+   * A qualidade e o som escolhidos ao começar continuam valendo.
+   */
+  const changeShare = useCallback(
+    async (sourceId: string) => {
+      if (!session || !sharingRef.current) return;
+      const sender = nativeSenderRef.current;
+
+      if (sender?.isActive) {
+        if (!isNativeSourceId(sourceId)) {
+          throw new Error("Esta live usa o envio nativo: escolha uma fonte da lista do app.");
+        }
+        const info = await sender.switchSource(sourceId);
+        recordDiagnostic("native-share-switched", {
+          width: info.width,
+          height: info.height,
+          encoder: info.encoder,
+        });
+        nativePreviewRef.current?.stop();
+        try {
+          const preview = new NativePreview({
+            fetchFrame: async () => {
+              const frame = await nativePreviewFrame();
+              if (!frame) throw new Error("A prévia ainda não tem imagem");
+              return frame;
+            },
+          });
+          nativePreviewRef.current = preview;
+          previewStreamRef.current = preview.start(sourceId);
+        } catch (error) {
+          recordDiagnostic("native-preview-failed", { message: errorMessage(error) });
+        }
+        publishShares(session.participantId);
+        return;
+      }
+
+      const current = localStreamRef.current;
+      const quality = shareQualityRef.current;
+      const oldVideo = current?.getVideoTracks()[0];
+      if (!current || !quality || !oldVideo) return;
+      if (isNativeSourceId(sourceId)) {
+        throw new Error("Esta live usa o seletor do Windows: escolha a nova tela por ele.");
+      }
+
+      const next = await startDisplayMediaShare(quality, sourceId);
+      const newVideo = next.getVideoTracks()[0];
+      if (!newVideo) {
+        for (const track of next.getTracks()) track.stop();
+        throw new Error("O Windows não retornou uma faixa de vídeo.");
+      }
+      // O som do computador (captura em Rust) segue como está; só no navegador a fonte traz o seu.
+      const oldAudio = current.getAudioTracks()[0];
+      const newAudio = next.getAudioTracks()[0];
+
+      await peerManagerRef.current?.replaceTrack(oldVideo, newVideo);
+      current.removeTrack(oldVideo);
+      current.addTrack(newVideo);
+      oldVideo.stop();
+      if (oldAudio && newAudio) {
+        await peerManagerRef.current?.replaceTrack(oldAudio, newAudio);
+        current.removeTrack(oldAudio);
+        current.addTrack(newAudio);
+        oldAudio.stop();
+      } else {
+        for (const track of next.getAudioTracks()) track.stop();
+      }
+      newVideo.addEventListener("ended", () => {
+        if (sharingRef.current) void stopShareRef.current();
+      });
+      recordDiagnostic("share-switched", { engine: "webview" });
+      publishShares(session.participantId);
+    },
+    [publishShares, session],
   );
 
   const setWatchingShare = useCallback(
@@ -1183,6 +1266,8 @@ export function useTelinhaRoom(
     copyDiagnostics: buildDiagnostics,
     startShare,
     stopShare,
+    changeShare,
+    nativeShare,
     startCamera,
     stopCamera,
     applyCameraDevice,

@@ -175,6 +175,33 @@ describe("NativeSender", () => {
     });
   });
 
+  it("troca a fonte com a live no ar, sem mexer nos espectadores", async () => {
+    const { sender } = setup();
+    await sender.start("window:10", quality);
+    await sender.offerTo("peer-a");
+    mockedInvoke.mockClear();
+    mockedInvoke.mockResolvedValueOnce({ width: 1280, height: 720, encoder: "NVENC" });
+    const info = await sender.switchSource("screen:1");
+    expect(info).toEqual({ width: 1280, height: 720, encoder: "NVENC" });
+    expect(mockedInvoke).toHaveBeenCalledWith("native_share_switch", { id: "screen:1" });
+    expect(sender.hasViewer("peer-a")).toBe(true);
+    expect(sender.isActive).toBe(true);
+  });
+
+  it("a troca que falha devolve o motivo e a live segue ativa", async () => {
+    const { sender } = setup();
+    await sender.start("window:10", quality);
+    mockedInvoke.mockRejectedValueOnce("A janela não existe mais");
+    await expect(sender.switchSource("window:99")).rejects.toThrow("A janela não existe mais");
+    expect(sender.isActive).toBe(true);
+  });
+
+  it("não troca sem uma live nativa", async () => {
+    const { sender } = setup();
+    await expect(sender.switchSource("screen:1")).rejects.toThrow();
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
   it("candidato que chega antes de a resposta ser aplicada espera por ela", async () => {
     const { sender } = setup();
     await sender.start("window:10", quality);

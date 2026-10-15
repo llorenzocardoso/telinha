@@ -137,6 +137,22 @@ export class NativeSender {
     }
   }
 
+  /**
+   * Aponta a live para outra fonte sem encerrá-la: o Rust reinicia a captura e os espectadores
+   * seguem recebendo na mesma conexão. Se a nova fonte não abrir, a anterior continua no ar.
+   */
+  async switchSource(sourceId: string): Promise<NativeStartInfo> {
+    if (!this.active) throw new Error("Nenhuma live nativa em andamento");
+    try {
+      return await invoke<NativeStartInfo>("native_share_switch", { id: sourceId });
+    } catch (error) {
+      throw Object.assign(
+        new Error(typeof error === "string" ? error : "Não foi possível trocar a fonte"),
+        { cause: error },
+      );
+    }
+  }
+
   /** Abre a conexão com um espectador e manda a oferta. */
   async offerTo(peerId: string, relayOnly = false): Promise<void> {
     if (!this.active) return;

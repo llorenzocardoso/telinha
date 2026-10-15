@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bell, BellOff, Link, LogOut, Monitor, Settings, Square, Video, VideoOff } from "lucide-react";
+import {
+  Bell,
+  BellOff,
+  Link,
+  LogOut,
+  Monitor,
+  RefreshCw,
+  Settings,
+  Square,
+  Video,
+  VideoOff,
+} from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import type { RoomSession } from "../lib/api";
@@ -27,6 +38,7 @@ import { CameraGrid } from "../components/CameraGrid";
 import { CameraStrip } from "../components/CameraStrip";
 import { VideoTile } from "../components/VideoTile";
 import { LiveControls } from "../components/LiveControls";
+import { SwitchSourceDialog } from "../components/SwitchSourceDialog";
 import { RoomLayout } from "../components/RoomLayout";
 import { describeParticipants } from "../room/participants";
 import {
@@ -123,6 +135,8 @@ export function RoomScreen({
     retryConnections,
     startShare,
     stopShare,
+    changeShare,
+    nativeShare,
     startCamera,
     stopCamera,
     applyCameraDevice,
@@ -577,6 +591,19 @@ export function RoomScreen({
     setPickerOpen(true);
   }
 
+  if (pickerOpen && isSharing) {
+    return (
+      <SwitchSourceDialog
+        native={nativeShare}
+        onCancel={() => setPickerOpen(false)}
+        onSwitch={async (sourceId) => {
+          await changeShare(sourceId);
+          setPickerOpen(false);
+        }}
+      />
+    );
+  }
+
   if (pickerOpen) {
     return (
       <ScreenSharePicker
@@ -710,6 +737,7 @@ export function RoomScreen({
           onWatchAll={watchAll}
           onToggleFullscreen={() => setWatchFullscreen((open) => !open)}
           onToggleShare={toggleOwnShare}
+          onSwitchShare={() => setPickerOpen(true)}
           onToggleCamera={toggleCamera}
           onStopWatching={() => stopWatching()}
           onLeaveRoom={onLeave}
@@ -814,6 +842,15 @@ export function RoomScreen({
       >
         {isSharing ? "Parar transmissão" : "Compartilhar tela"}
       </Button>
+      {isSharing && (
+        <IconButton
+          label="Trocar o que compartilha"
+          icon={<RefreshCw aria-hidden="true" strokeWidth={1.8} />}
+          size="lg"
+          disabled={!connected}
+          onClick={() => setPickerOpen(true)}
+        />
+      )}
       <IconButton
         label={cameraHint}
         icon={cameraIcon}
