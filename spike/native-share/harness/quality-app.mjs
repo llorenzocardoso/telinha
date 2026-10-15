@@ -36,9 +36,8 @@ await viewer.getByRole("button", { name: "Sair da sala" }).waitFor();
 // The same settings as the Chrome run: 1080p, 60 fps, the 10 Mbps cap.
 await host.getByRole("button", { name: /Compartilhar tela/ }).click();
 await host.getByText("O que compartilhar").waitFor({ timeout: 15000 });
-await host.getByRole("button", { name: "Equilibrado" }).click();
-await host.getByRole("radio", { name: /^Janelas/ }).click();
-await host.getByRole("button", { name: /Janela de qualidade/ }).click();
+await host.getByRole("button", { name: /Janela de qualidade/ }).click(); // the grid comes first
+await host.getByRole("button", { name: "Equilibrado" }).click(); // then the quality step
 await host.getByRole("button", { name: "Compartilhar", exact: true }).click();
 await host.getByRole("button", { name: /Parar transmissão|Parar minha transmissão/ }).waitFor({ timeout: 20000 });
 

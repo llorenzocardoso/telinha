@@ -30,9 +30,10 @@ Código em [src-tauri/](../src-tauri/). Crate `telinha` (lib `telinha_lib`), ide
 | `list_share_sources`, `resolve_share_source`, `read_share_frame` | **Não** (legado) | Captura de tela por quadros JPEG via `xcap` |
 | `native_share_capability` | Só com o interruptor experimental | `{available, vendor, encoder, reason}`: há captura + encoder H.264 por hardware na GPU de captura? |
 | `native_share_sources` | Idem | Telas e janelas (`screen:<HMONITOR>` / `window:<HWND>`), sem miniaturas |
-| `native_share_thumbnail(id, width?)` | Idem | Miniatura JPEG (data URL) de uma fonte (480 px; a prévia da própria live pede 960); separada da lista para o seletor abrir na hora |
+| `native_share_thumbnail(id, width?)` | Idem | Miniatura JPEG (data URL) de uma fonte (480 px); separada da lista para o seletor abrir na hora |
+| `native_share_preview()` | Idem | Prévia da própria live: o último quadro que o codificador recebeu, em JPEG (data URL, até 960 px); `null` até o primeiro ficar pronto. Pedir já liga a geração |
 | `native_share_icon(id)` | Idem | Ícone PNG (data URL) do aplicativo dono de uma janela; `null` para telas |
-| `native_share_dev_record(id, seconds, maxHeight, fps, mbps)` | Idem, só em `dev` | Captura a fonte pelo pipeline real por alguns segundos e grava o H.264 na pasta temporária |
+| `native_share_dev_record(id, seconds, maxHeight, fps, mbps)` | Idem, só em `dev` | Captura a fonte pelo pipeline real por alguns segundos e grava o H.264 na pasta temporária. Sem botão no app; serve a testes e a quem desenvolve |
 | `native_share_start(id, maxHeight, fps, maxMbps, includeAudio, relayCapKbps?)` | Idem | Começa a capturar e codificar (e, com `includeAudio`, a capturar o som); devolve `{width, height, encoder}`. Nada vai à rede até haver espectador |
 | `native_share_offer(peerId, iceServers, relayOnly)` | Idem | Abre a conexão de um espectador e devolve o SDP da oferta |
 | `native_share_answer(peerId, sdp)`, `native_share_ice(peerId, candidate, sdpMid, sdpMlineIndex)` | Idem | Resposta e candidatos ICE do espectador |
@@ -111,9 +112,24 @@ credenciais ICE novas (`GET /rooms/:code/ice-servers`), na 2ª forçando `relay`
 ofertas, então não precisa de lógica própria.
 
 **Prévia da própria live.** Quem transmite vê um tile com a própria live. Como o envio nativo não tem
-`MediaStream` no app, `room/nativePreview.ts` busca a cada 500 ms um quadro reduzido da fonte (o mesmo caminho
-das miniaturas, em 960 px) e o desenha num canvas; a captura do canvas vira a stream do tile. É só uma prévia, com
-poucos quadros por segundo, e **nunca é enviada a ninguém** (fica fora do `PeerManager`).
+`MediaStream` no app, `room/nativePreview.ts` pede a cada 500 ms `native_share_preview` e desenha o resultado num
+canvas; a captura do canvas vira a stream do tile. O quadro vem do próprio pipeline: o laço do codificador copia o
+último quadro NV12 (o que quem assiste recebe, já com as barras pretas) para a CPU e o converte (`preview.rs`),
+então a janela **não é fotografada de novo** (antes a prévia usava a mesma captura simples das miniaturas, que numa
+janela minimizada devolve só a barra de título de 160×28). Com a janela minimizada fica o último quadro bom. É só uma
+prévia, com poucos quadros por segundo, e **nunca é enviada a ninguém** (fica fora do `PeerManager`).
+
+**Seletor em duas etapas (como o Discord).** A primeira só mostra a grade, com as abas **Aplicativos** (abre
+nela) e **Telas**; escolher um item já avança para a segunda, com resolução, taxa de quadros e som, e o botão
+**Compartilhar** (`Voltar` volta à grade). Sem o interruptor, o diálogo continua numa etapa só, com
+"Escolher janela" abrindo o seletor do Windows.
+
+**Janelas minimizadas.** Um jogo em tela cheia minimiza ao dar alt-tab, e é justamente quando a pessoa abre o
+Telinha para compartilhá-lo; por isso essas janelas **entram na lista** (selo "Minimizada", ícone no lugar da
+miniatura, que não existe). O Windows informa um tamanho de 160×28 enquanto a janela está minimizada, então o
+app usa o tamanho de quando ela é restaurada (`GetWindowPlacement`) tanto na lista quanto ao fixar o tamanho da
+codificação. A live só mostra imagem quando a janela é aberta de novo (o WGC não entrega quadros de uma janela
+minimizada). `xcap` já deixa de fora as janelas do próprio processo, as sem título e as ocultas.
 
 **Lista de fontes.** Cada janela mostra o ícone do aplicativo (`native_share_icon`, extraído do executável e
 desenhado sobre a cor do cartão, então sem transparência a tratar). Janelas "fantasma" (estilos
@@ -138,7 +154,8 @@ C runtime estática, então `src-tauri/.cargo/config.toml` liga `+crt-static` pa
 `x86_64-pc-windows-msvc`; sem isso o link falha com `LNK2038`. O CI do Windows passa a baixar o pacote
 na primeira compilação (o cache do `rust-cache` cobre as seguintes).
 
-**Limitações atuais:** só H.264 (a fonte pré-codificada não gera VP8; todo Chromium/WebView2 decodifica H.264, mas
+**Limitações atuais:** as miniaturas de janelas aceleradas por GPU (Discord, navegadores) podem sair pretas: vêm
+de uma captura mais simples que a da live (`xcap`), sem relação com a imagem que vai ao ar; só H.264 (a fonte pré-codificada não gera VP8; todo Chromium/WebView2 decodifica H.264, mas
 não há plano B como o `forceVp8` do caminho comum); não dá para trocar resolução/fps no meio da live (a
 qualidade escolhida vale até parar); a prévia é de poucos quadros por segundo; testado só com GPU NVIDIA, a
 1080p e em loopback; telas HDR, jogos em tela cheia exclusiva e conteúdo protegido (DRM) não foram testados.

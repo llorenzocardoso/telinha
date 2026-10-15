@@ -62,7 +62,7 @@ log("second viewer in the room");
 // ---- host: share the test window through the in-app picker ------------------------------------
 await host.getByRole("button", { name: /Compartilhar tela/ }).click();
 await host.getByText("O que compartilhar").waitFor({ timeout: 15000 });
-await host.getByRole("radio", { name: /^Janelas/ }).click();
+await host.getByRole("radio", { name: "Aplicativos" }).click();
 const card = host.getByRole("button", { name: /Janela de teste do envio/ });
 await card.waitFor({ timeout: 15000 });
 
@@ -76,10 +76,13 @@ try {
 } catch {
   fail("no application icon arrived in the picker");
 }
-await card.click();
 const pickerShot = `${prefix}-picker.png`;
 await host.screenshot({ path: pickerShot });
 log("picker screenshot", pickerShot);
+// Picking an application moves on to the quality step.
+await card.click();
+await host.getByLabel("Fonte escolhida").waitFor({ timeout: 5000 });
+await host.screenshot({ path: `${prefix}-quality.png` });
 await host.getByRole("button", { name: "Compartilhar", exact: true }).click();
 await host.getByRole("button", { name: /Parar transmissão|Parar minha transmissão/ }).waitFor({ timeout: 20000 });
 log("host is live");

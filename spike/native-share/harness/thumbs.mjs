@@ -7,14 +7,14 @@ const page = browser.contexts()[0].pages()[0];
 await page.getByRole("button", { name: /Compartilhar tela/ }).click();
 await page.getByText("O que compartilhar").waitFor({ timeout: 15000 });
 
-for (const tab of [/^Telas/, /^Janelas/]) {
+for (const tab of ["Telas", "Aplicativos"]) {
   await page.getByRole("radio", { name: tab }).click();
   await page.waitForTimeout(9000); // thumbnails stream in two at a time
   const report = await page.evaluate(async () => {
     const out = [];
     for (const card of document.querySelectorAll(".source-card")) {
       const name = card.querySelector(".source-name")?.textContent ?? "?";
-      const img = card.querySelector("img");
+      const img = card.querySelector(".source-thumb img");
       if (!img) {
         out.push({ name: name.slice(0, 28), thumbnail: false });
         continue;

@@ -32,9 +32,11 @@ Para um app instalável: `npm run build:desktop` (o atualizador precisa da chave
 
 ## Ligar e desligar
 
-No diálogo **Compartilhar tela**, ligue **"Seletor de telas próprio (experimental)"**. A grade com telas e
-janelas aparece (se a GPU tem encoder; senão o app avisa e usa o seletor do Windows). Desligar volta ao
-caminho de sempre; nada mais muda. Se o envio nativo falhar ao começar, o app cai sozinho no seletor do Windows.
+No diálogo **Compartilhar tela**, ligue **"Seletor de telas próprio (experimental)"**. A grade aparece (se a
+GPU tem encoder; senão o app avisa e usa o seletor do Windows) em duas etapas, como no Discord: primeiro
+escolhe-se o **aplicativo ou a tela** (abas "Aplicativos" e "Telas"); em seguida vêm resolução, taxa de quadros,
+som e o botão **Compartilhar** (`Voltar` volta à grade). Desligar volta ao caminho de sempre; nada mais muda.
+Se o envio nativo falhar ao começar, o app cai sozinho no seletor do Windows.
 
 ## Teste solo (só você, no navegador)
 
@@ -73,6 +75,7 @@ mesma rede**, alternando só o interruptor: uma rodada com o seletor próprio **
 | 8 | Relay (TURN) | Redes que bloqueiam P2P (4G com CGNAT, rede corporativa) | Conecta? O indicador mostra relay? Banda limitada? |
 | 9 | Parar e começar de novo | Compartilhar, parar, compartilhar de novo, 5 vezes | Nenhuma falha, nenhum travamento do app |
 | 10 | Maratona | Uma live de 30 minutos ou mais | Memória, CPU/GPU, atraso, nenhuma degradação com o tempo |
+| 11 | Jogo minimizado | Com um jogo em tela cheia (por exemplo o Valorant), dar alt-tab para o Telinha e escolhê-lo na lista (aparece com o selo "Minimizada"); depois voltar ao jogo | O jogo está na lista? A live mostra imagem ao voltar ao jogo? Qual a fluidez em jogo? (jogos com anti-cheat e tela cheia exclusiva **não foram testados**) |
 
 ### Coletar números
 
