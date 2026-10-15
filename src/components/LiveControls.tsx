@@ -1,4 +1,14 @@
-import { Columns2, LogOut, Maximize2, Minimize2, Monitor, Video, VideoOff, X } from "lucide-react";
+import {
+  Columns2,
+  LogOut,
+  Maximize2,
+  Minimize2,
+  Monitor,
+  RefreshCw,
+  Video,
+  VideoOff,
+  X,
+} from "lucide-react";
 import { Avatar, Dock, IconButton } from "./ui";
 import { VolumeControl } from "./VolumeControl";
 
@@ -33,6 +43,8 @@ interface LiveControlsProps {
   onWatchAll: () => void;
   onToggleFullscreen: () => void;
   onToggleShare: () => void;
+  /** Troca o que a live mostra sem encerrá-la; só aparece enquanto se transmite. */
+  onSwitchShare: () => void;
   onToggleCamera: () => void;
   onStopWatching: () => void;
   onLeaveRoom: () => void;
@@ -54,6 +66,7 @@ export function LiveControls({
   onWatchAll,
   onToggleFullscreen,
   onToggleShare,
+  onSwitchShare,
   onToggleCamera,
   onStopWatching,
   onLeaveRoom,
@@ -122,6 +135,16 @@ export function LiveControls({
         disabled={!connected}
         onClick={onToggleShare}
       />
+
+      {isSharing && (
+        <IconButton
+          label="Trocar o que compartilha"
+          icon={<RefreshCw aria-hidden="true" strokeWidth={1.8} />}
+          size="lg"
+          disabled={!connected}
+          onClick={onSwitchShare}
+        />
+      )}
 
       <IconButton
         label={cameraLabel}

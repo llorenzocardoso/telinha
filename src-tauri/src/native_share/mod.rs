@@ -328,6 +328,30 @@ pub async fn native_share_start(
     }
 }
 
+/// Moves a running native share to another source without ending it or touching the viewers.
+#[tauri::command]
+pub async fn native_share_switch(id: String) -> Result<NativeStartInfo, String> {
+    #[cfg(windows)]
+    {
+        let source = geometry::SourceId::parse(&id).ok_or("Fonte inválida")?;
+        let window_pid = match source {
+            geometry::SourceId::Window(handle) => window_pid(handle),
+            geometry::SourceId::Screen(_) => None,
+        };
+        sender::switch_source(sender::SwitchRequest {
+            source_id: id,
+            source,
+            window_pid,
+        })
+        .await
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = id;
+        Err(UNSUPPORTED.into())
+    }
+}
+
 /// The process that owns a window, for per-application audio.
 #[cfg(windows)]
 fn window_pid(handle: u32) -> Option<u32> {
@@ -1101,6 +1125,165 @@ mod hardware_tests {
             for viewer in &viewers {
                 viewer.pc.close();
             }
+            sender::stop().await;
+        });
+    }
+
+    /// Switching the source mid-share: the viewer keeps decoding on the same connection, the
+    /// picture changes to the new source's size, and a bad target leaves the old source running.
+    #[test]
+    #[ignore = "needs a GPU and an interactive desktop"]
+    fn switching_the_source_keeps_the_viewer_connected() {
+        use super::sender;
+        use libwebrtc::prelude::*;
+        use libwebrtc::stats::RtcStats;
+        use std::sync::{mpsc, Arc};
+        use std::time::{Duration, Instant};
+
+        let first = TestWindow::open(900, 600);
+        let second = TestWindow::open(640, 360);
+        let (event_tx, event_rx) = mpsc::channel::<(String, serde_json::Value)>();
+        let emit: sender::Emit = Arc::new(move |name, value| {
+            let _ = event_tx.send((name.to_string(), value));
+        });
+
+        tauri::async_runtime::block_on(async {
+            let started = sender::start(
+                emit.clone(),
+                sender::StartRequest {
+                    source_id: first.id(),
+                    source: geometry::SourceId::parse(&first.id()).unwrap(),
+                    include_audio: false,
+                    window_pid: None,
+                    max_height: 720,
+                    fps: 30,
+                    max_bitrate: 6_000_000,
+                    relay_cap: None,
+                },
+            )
+            .await
+            .expect("start");
+            let first_size = (started.width, started.height);
+
+            let pc = PeerConnectionFactory::default()
+                .create_peer_connection(RtcConfiguration::default())
+                .expect("viewer connection");
+            let (ice_tx, ice) = mpsc::channel();
+            pc.on_ice_candidate(Some(Box::new(move |c| {
+                let _ = ice_tx.send((c.candidate(), c.sdp_mid(), c.sdp_mline_index()));
+            })));
+            let offer = sender::offer(emit.clone(), "viewer".into(), vec![], false)
+                .await
+                .expect("offer");
+            pc.set_remote_description(SessionDescription::parse(&offer, SdpType::Offer).unwrap())
+                .await
+                .expect("remote description");
+            let answer = pc
+                .create_answer(AnswerOptions::default())
+                .await
+                .expect("answer");
+            pc.set_local_description(answer.clone())
+                .await
+                .expect("local");
+            sender::answer("viewer", &answer.to_string())
+                .await
+                .expect("answer");
+
+            let video = || {
+                let pc = pc.clone();
+                async move {
+                    for stat in pc.get_stats().await.unwrap_or_default() {
+                        if let RtcStats::InboundRtp(inbound) = stat {
+                            if inbound.stream.kind == "video" {
+                                return (
+                                    inbound.inbound.frames_decoded,
+                                    inbound.inbound.frame_width,
+                                    inbound.inbound.frame_height,
+                                );
+                            }
+                        }
+                    }
+                    (0, 0, 0)
+                }
+            };
+            let pump = || {
+                while let Ok((name, value)) = event_rx.try_recv() {
+                    if name != "native-share-ice" {
+                        continue;
+                    }
+                    let candidate = IceCandidate::parse(
+                        value["sdpMid"].as_str().unwrap_or("0"),
+                        value["sdpMlineIndex"].as_i64().unwrap_or(0) as i32,
+                        value["candidate"].as_str().unwrap_or_default(),
+                    )
+                    .expect("candidate");
+                    let pc = pc.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = pc.add_ice_candidate(candidate).await;
+                    });
+                }
+                while let Ok((candidate, mid, index)) = ice.try_recv() {
+                    tauri::async_runtime::spawn(async move {
+                        let _ = sender::add_ice("viewer", &candidate, &mid, index).await;
+                    });
+                }
+            };
+            // Waits until `done` accepts what the viewer has decoded so far.
+            let wait_for = |done: Box<dyn Fn((u32, u32, u32)) -> bool>, what: &'static str| {
+                let video = &video;
+                let pump = &pump;
+                async move {
+                    let began = Instant::now();
+                    loop {
+                        pump();
+                        let seen = video().await;
+                        if done(seen) {
+                            return seen;
+                        }
+                        assert!(
+                            began.elapsed() < Duration::from_secs(25),
+                            "{what}: {seen:?}"
+                        );
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                }
+            };
+
+            let (before, ..) =
+                wait_for(Box::new(|(frames, ..)| frames >= 20), "first source").await;
+
+            // A target that does not exist: the switch fails and the first source keeps going.
+            let failed = sender::switch_source(sender::SwitchRequest {
+                source_id: "window:1".into(),
+                source: geometry::SourceId::Window(1),
+                window_pid: None,
+            })
+            .await;
+            assert!(failed.is_err(), "a missing window must not be switched to");
+            let (resumed, ..) = wait_for(
+                Box::new(move |(frames, ..)| frames >= before + 20),
+                "after a failed switch",
+            )
+            .await;
+
+            let info = sender::switch_source(sender::SwitchRequest {
+                source_id: second.id(),
+                source: geometry::SourceId::parse(&second.id()).unwrap(),
+                window_pid: None,
+            })
+            .await
+            .expect("switch");
+            let second_size = (info.width, info.height);
+            assert_ne!(second_size, first_size, "the new source has its own size");
+            let (_, width, height) = wait_for(
+                Box::new(move |(frames, w, h)| frames >= resumed + 20 && (w, h) == second_size),
+                "after switching",
+            )
+            .await;
+            assert_eq!((width, height), second_size);
+            assert_eq!(sender::stats().expect("stats").viewers, 1);
+
+            pc.close();
             sender::stop().await;
         });
     }

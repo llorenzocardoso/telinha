@@ -1,18 +1,18 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { LiveControls } from "./LiveControls";
 
 afterEach(cleanup);
 
-function renderControls(volumes: { id: string; name?: string }[]) {
+function renderControls(volumes: { id: string; name?: string }[], isSharing = false, onSwitchShare = vi.fn()) {
   return render(
     <LiveControls
       volumes={volumes.map((item) => ({ ...item, volume: 80, onChange: vi.fn() }))}
       choices={[]}
       fullscreen={false}
       connected
-      isSharing={false}
+      isSharing={isSharing}
       cameraOn={false}
       cameraReady
       cameraLabel="Ligar câmera"
@@ -21,6 +21,7 @@ function renderControls(volumes: { id: string; name?: string }[]) {
       onWatchAll={vi.fn()}
       onToggleFullscreen={vi.fn()}
       onToggleShare={vi.fn()}
+      onSwitchShare={onSwitchShare}
       onToggleCamera={vi.fn()}
       onStopWatching={vi.fn()}
       onLeaveRoom={vi.fn()}
@@ -30,6 +31,16 @@ function renderControls(volumes: { id: string; name?: string }[]) {
 }
 
 describe("LiveControls", () => {
+  it("só oferece trocar o que compartilha enquanto se transmite", () => {
+    const onSwitchShare = vi.fn();
+    renderControls([], false, onSwitchShare);
+    expect(screen.queryByRole("button", { name: "Trocar o que compartilha" })).toBeNull();
+    cleanup();
+    renderControls([], true, onSwitchShare);
+    fireEvent.click(screen.getByRole("button", { name: "Trocar o que compartilha" }));
+    expect(onSwitchShare).toHaveBeenCalledOnce();
+  });
+
   it("com duas lives, os volumes ficam compactos e com o nome de cada uma", () => {
     const { container } = renderControls([
       { id: "a", name: "Ana" },
