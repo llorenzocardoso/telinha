@@ -1111,7 +1111,7 @@ export function useTelinhaRoom(
       const newVideo = next.getVideoTracks()[0];
       if (!newVideo) {
         for (const track of next.getTracks()) track.stop();
-        throw new Error("O Windows não retornou uma faixa de vídeo.");
+        throw new Error("A captura não retornou uma faixa de vídeo.");
       }
       // O som do computador (captura em Rust) segue como está; só no navegador a fonte traz o seu.
       const oldAudio = current.getAudioTracks()[0];

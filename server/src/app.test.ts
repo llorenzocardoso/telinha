@@ -158,6 +158,25 @@ describe("telinha server", () => {
     expect(await invalid.text()).not.toContain("telinha://join");
   });
 
+  it("com a versão web configurada, libera a origem dela e oferece o navegador no convite", async () => {
+    const { server, base } = await listen({ webAppUrl: "https://web.telinha.test/" });
+    running = server;
+
+    const allowed = await fetch(`${base}/health`, {
+      headers: { Origin: "https://web.telinha.test" },
+    });
+    expect(allowed.headers.get("access-control-allow-origin")).toBe("https://web.telinha.test");
+
+    const invite = await fetch(`${base}/j/AB23CD`);
+    expect(await invite.text()).toContain('href="https://web.telinha.test/j/AB23CD"');
+
+    const { data } = await postJson(`${base}/rooms`, { displayName: "Ana" });
+    const accepted = authenticatedSocket(data as unknown as RoomSession, "https://web.telinha.test").socket;
+    const hello = await waitMessage(accepted);
+    expect(hello.type, JSON.stringify(hello)).toBe("hello");
+    accepted.close();
+  });
+
   it("rejeita código personalizado na criação", async () => {
     const { server, base } = await listen();
     running = server;

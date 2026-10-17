@@ -1,3 +1,4 @@
+import { isTauriRuntime } from "../lib/runtime";
 import { createSyntheticStream } from "./displayShare";
 
 const DEVICE_KEY = "telinha-camera-device";
@@ -64,11 +65,13 @@ export async function listCameras(): Promise<CameraDevice[]> {
   }
 }
 
-export function cameraErrorMessage(error: unknown): string {
+export function cameraErrorMessage(error: unknown, nativeRuntime = isTauriRuntime()): string {
   switch (errorName(error)) {
     case "NotAllowedError":
     case "SecurityError":
-      return "O acesso à câmera foi negado. Libere a câmera nas configurações de privacidade do Windows.";
+      return nativeRuntime
+        ? "O acesso à câmera foi negado. Libere a câmera nas configurações de privacidade do Windows."
+        : "O acesso à câmera foi negado. Libere a câmera nas permissões do navegador para este site.";
     case "NotFoundError":
     case "OverconstrainedError":
       return "Nenhuma câmera foi encontrada.";

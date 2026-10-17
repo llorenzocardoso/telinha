@@ -24,3 +24,37 @@ services:
         sync: false
       - key: TURN_MAX_BITRATE_KBPS
         sync: false
+      # URL da versão web: o convite oferece "Entrar pelo navegador" e a origem dela fica liberada.
+      - key: WEB_APP_URL
+        sync: false
+  # Versão web (o mesmo React do app). Static Site não gasta as horas de instância do plano free.
+  - type: web
+    name: telinha-web
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    # Só rebuilda quando o frontend muda: mudanças no servidor ou no Rust não gastam build.
+    buildFilter:
+      paths:
+        - src/**
+        - index.html
+        - package.json
+        - package-lock.json
+        - vite.config.ts
+        - tsconfig*.json
+        - .env.production
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+    routes:
+      # Convites chegam como /j/CODIGO; o React lê o código da URL.
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      - path: /index.html
+        name: Cache-Control
+        value: no-cache

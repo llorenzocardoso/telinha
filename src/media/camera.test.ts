@@ -27,6 +27,8 @@ describe("câmera", () => {
 
   it("traduz as falhas mais comuns do getUserMedia", () => {
     expect(cameraErrorMessage({ name: "NotAllowedError" })).toContain("negado");
+    expect(cameraErrorMessage({ name: "NotAllowedError" }, true)).toContain("Windows");
+    expect(cameraErrorMessage({ name: "NotAllowedError" }, false)).toContain("navegador");
     expect(cameraErrorMessage({ name: "NotReadableError" })).toContain("em uso");
     expect(cameraErrorMessage({ name: "NotFoundError" })).toContain("Nenhuma câmera");
     expect(cameraErrorMessage(new Error("x"))).toBe("Não foi possível ligar a câmera.");

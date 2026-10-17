@@ -6,7 +6,8 @@ import { UpdatePrompt } from "./components/UpdatePrompt";
 import { createRoom, enterRoom, fetchAppConfig, leaveRoomSession, type RoomSession } from "./lib/api";
 import { APP_VERSION } from "./lib/protocol";
 import { decideUpdate, findAvailableUpdate, installAvailableUpdate } from "./lib/updates";
-import { actionFromUrls } from "./lib/deepLink";
+import { actionFromUrls, joinFromLocation } from "./lib/deepLink";
+import { isTauriRuntime } from "./lib/runtime";
 import {
   clearActiveSession,
   flushPendingLeaves,
@@ -157,6 +158,11 @@ function App() {
   }, []);
 
   async function runUpdate() {
+    if (!isTauriRuntime()) {
+      // Na web a versão nova já está publicada: basta recarregar a página.
+      window.location.reload();
+      return;
+    }
     setUpdating(true);
     setUpdateError(null);
     try {
@@ -202,6 +208,16 @@ function App() {
 
     let unlisten: (() => void) | undefined;
     let cancelled = false;
+
+    if (!isTauriRuntime()) {
+      // Versão web: o convite chega pela URL da página. Limpa a URL para um F5 não repetir o convite.
+      const invite = joinFromLocation(window.location.href);
+      if (invite?.action === "join") {
+        setPendingInvite({ code: invite.code, name: invite.name });
+        window.history.replaceState(null, "", "/");
+      }
+      return;
+    }
 
     listen<string[]>("telinha-open-url", (event) => {
       applyUrls(event.payload);
@@ -326,6 +342,7 @@ function App() {
       progress={updateProgress}
       error={updateError}
       updating={updating}
+      web={!isTauriRuntime()}
       onUpdate={() => void runUpdate()}
       onLater={() => setUpdatePrompt(null)}
     />

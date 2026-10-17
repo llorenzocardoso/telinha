@@ -117,6 +117,7 @@ Abra `http://127.0.0.1:1420` em duas janelas anônimas separadas. No navegador, 
 | `WS_PUBLIC_URL` | servidor | URL pública fixa do WebSocket |
 | `TRUST_PROXY` | servidor | habilita confiança no primeiro proxy quando vale `1` |
 | `CORS_ORIGINS` | servidor | origens web adicionais, separadas por vírgula |
+| `WEB_APP_URL` | servidor | URL da versão web; o convite passa a oferecer "Entrar pelo navegador" |
 | `MIN_PROTOCOL_VERSION` | servidor | menor versão do protocolo aceita pelo HTTP e WebSocket |
 | `MIN_APP_VERSION` | servidor | menor versão do app aceita; abaixo dela a pessoa vê a tela de atualização |
 | `CLOUDFLARE_TURN_KEY_ID` | servidor | chave do Cloudflare Realtime TURN; sem ela o servidor entrega só STUN |

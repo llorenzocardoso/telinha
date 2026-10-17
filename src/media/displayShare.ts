@@ -56,7 +56,7 @@ export async function startDisplayMediaShare(
     throw new Error("Esta fonte só pode ser compartilhada pelo envio nativo.");
   }
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getDisplayMedia) {
-    throw new Error("A captura de tela do Windows não está disponível.");
+    throw new Error("A captura de tela não está disponível neste dispositivo.");
   }
 
   try {
@@ -68,7 +68,7 @@ export async function startDisplayMediaShare(
       for (const item of stream.getTracks()) {
         item.stop();
       }
-      throw new Error("O Windows não retornou uma faixa de vídeo.");
+      throw new Error("A captura não retornou uma faixa de vídeo.");
     }
     track.contentHint = "motion";
     return stream;
