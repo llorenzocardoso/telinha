@@ -15,6 +15,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import type { RoomSession } from "../lib/api";
 import { inviteLink } from "../lib/trayLive";
+import { canCaptureScreen } from "../lib/runtime";
 import {
   ConnectionState,
   useTelinhaRoom,
@@ -74,7 +75,7 @@ function describeShareQuality(quality: ShareQuality | null): string {
 
 interface RoomToast {
   id: number;
-  kind: "live" | "ended" | "copied" | "copy-failed";
+  kind: "live" | "ended" | "copied" | "copy-failed" | "error";
   name: string;
   shareId?: string;
 }
@@ -586,6 +587,10 @@ export function RoomScreen({
   function toggleOwnShare() {
     if (isSharing) {
       void stopShare();
+      return;
+    }
+    if (!canCaptureScreen()) {
+      pushToast("error", "Este navegador não compartilha tela. Use um computador para transmitir.");
       return;
     }
     setPickerOpen(true);

@@ -236,13 +236,15 @@ button:focus-visible {
 }
 
 .room-toast.copied,
-.room-toast.copy-failed {
+.room-toast.copy-failed,
+.room-toast.error {
   align-self: flex-end;
   width: fit-content;
   max-width: 100%;
 }
 
-.room-toast.copy-failed {
+.room-toast.copy-failed,
+.room-toast.error {
   color: var(--text-2);
 }
 

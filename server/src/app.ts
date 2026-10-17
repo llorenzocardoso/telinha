@@ -92,6 +92,8 @@ export interface TelinhaServerOptions {
   minProtocolVersion?: number;
   minAppVersion?: string;
   corsOrigins?: string[];
+  /** URL pública da versão web. O convite oferece o navegador e a origem dela fica liberada. */
+  webAppUrl?: string;
   maxRateBuckets?: number;
   authenticationTimeoutMs?: number;
   turn?: TurnProviderOptions;
@@ -102,6 +104,15 @@ export interface TelinhaServerOptions {
 export interface TelinhaServer {
   http: Server;
   close(): Promise<void>;
+}
+
+function webAppOrigin(url: string | undefined): string[] {
+  if (!url) return [];
+  try {
+    return [new URL(url).origin];
+  } catch {
+    return [];
+  }
 }
 
 function createParticipantId(): string {
@@ -177,7 +188,7 @@ export function createTelinhaServer(options: TelinhaServerOptions = {}): Telinha
   const authenticationTimeoutMs =
     options.authenticationTimeoutMs ?? AUTHENTICATION_TIMEOUT_MS;
   const allowedOrigins = new Set(
-    [...DEFAULT_CLIENT_ORIGINS, ...(options.corsOrigins ?? [])].map((origin) =>
+    [...DEFAULT_CLIENT_ORIGINS, ...webAppOrigin(options.webAppUrl), ...(options.corsOrigins ?? [])].map((origin) =>
       origin.trim().replace(/\/$/, ""),
     ),
   );
@@ -452,7 +463,7 @@ export function createTelinhaServer(options: TelinhaServerOptions = {}): Telinha
       res.status(404).type("text/plain").send("Convite inválido.");
       return;
     }
-    res.type("html").send(renderInvitePage(code));
+    res.type("html").send(renderInvitePage(code, options.webAppUrl));
   });
 
   app.get("/app-config", (_req, res) => {

@@ -1,7 +1,18 @@
 export const RELEASES_URL = "https://github.com/llorenzocardoso/telinha/releases/latest";
 
-export function renderInvitePage(code: string): string {
+/**
+ * Página do link de convite. Com `webAppUrl`, quem não está num Windows de mesa (Mac, Linux,
+ * celular) vai direto para a versão web, e no Windows o app abre com a web como alternativa.
+ */
+export function renderInvitePage(code: string, webAppUrl?: string): string {
   const deepLink = `telinha://join/${code}`;
+  const webLink = webAppUrl ? `${webAppUrl.replace(/\/+$/, "")}/j/${code}` : null;
+  const openApp = `window.location.href = ${JSON.stringify(deepLink)};`;
+  const script = webLink
+    ? `var ua = navigator.userAgent;
+var windowsDesktop = /Windows NT/.test(ua) && !/Mobile|Android/.test(ua);
+if (windowsDesktop) { ${openApp} } else { window.location.replace(${JSON.stringify(webLink)}); }`
+    : openApp;
   return `<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -11,7 +22,10 @@ export function renderInvitePage(code: string): string {
 <style>
   body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #1e1f22; color: #fff; font-family: system-ui, sans-serif; }
   main { text-align: center; padding: 24px; }
-  a.open { display: inline-block; margin: 16px 0; padding: 10px 20px; border-radius: 8px; background: #5865f2; color: #fff; text-decoration: none; font-weight: 600; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin: 16px 0; }
+  a.open, a.web { display: inline-block; padding: 10px 20px; border-radius: 8px; color: #fff; text-decoration: none; font-weight: 600; }
+  a.open { background: #5865f2; }
+  a.web { background: #4e5058; }
   a.download { color: #b5bac1; font-size: 0.85rem; }
 </style>
 </head>
@@ -19,10 +33,13 @@ export function renderInvitePage(code: string): string {
 <main>
   <h1>Sala ${code}</h1>
   <p>Abrindo o Telinha...</p>
-  <a class="open" href="${deepLink}">Abrir no Telinha</a>
+  <div class="actions">
+    <a class="open" href="${deepLink}">Abrir no Telinha</a>${webLink ? `
+    <a class="web" href="${webLink}">Entrar pelo navegador</a>` : ""}
+  </div>
   <p><a class="download" href="${RELEASES_URL}">Não abriu? Baixe o Telinha</a></p>
 </main>
-<script>window.location.href = ${JSON.stringify(deepLink)};</script>
+<script>${script}</script>
 </body>
 </html>
 `;

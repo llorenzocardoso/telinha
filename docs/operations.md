@@ -23,6 +23,7 @@ Modelo em `server/.env.example`.
 | `WS_PUBLIC_URL` | derivada do `Host` | URL pública do WebSocket devolvida aos clientes |
 | `TRUST_PROXY` | desligado (ligado se `RENDER` existe) | `1` confia no primeiro proxy para obter o IP real |
 | `CORS_ORIGINS` | — | Origens web adicionais (localhost e Tauri já são aceitos) |
+| `WEB_APP_URL` | — | URL da versão web. Libera a origem dela e faz o convite oferecer "Entrar pelo navegador" |
 | `MIN_PROTOCOL_VERSION` | versão atual do protocolo (2) | Menor protocolo aceito |
 | `MIN_APP_VERSION` | `0.2.0` | Menor versão do app; publicada em `/app-config` |
 | `CLOUDFLARE_TURN_KEY_ID`, `CLOUDFLARE_TURN_API_TOKEN` | — | Habilitam TURN (precisam das duas) |
@@ -45,6 +46,16 @@ Modelo em `server/.env.example`.
 Serviço web `telinha-server`: plano `free`, região `oregon`, `rootDir: server`, build `npm install && npm run build`, start `npm start`, health check `/health`, `NODE_VERSION=22`, `MIN_PROTOCOL_VERSION=2`, `MIN_APP_VERSION=0.2.0`. `CLOUDFLARE_TURN_KEY_ID` e `CLOUDFLARE_TURN_API_TOKEN` estão como `sync: false`: informe os valores no painel do Render.
 
 Como o Render define `RENDER`, `trust proxy` já é ativado. Defina `WS_PUBLIC_URL` (por exemplo `https://telinha-server.onrender.com`) para o `wsUrl` não depender dos cabeçalhos do proxy.
+
+### Versão web (`telinha-web`)
+
+Static Site do Render com o mesmo React do app: build `npm ci && npm run build` na raiz, publica `dist/`, com rewrite de `/*` para `/index.html` (convites chegam como `/j/CODIGO`). Static Site não gasta as horas de instância do plano free, só a cota de banda. O `buildFilter` evita builds quando só o servidor ou o Rust mudam.
+
+O build lê `VITE_API_URL` de `.env.production`. Depois de criar o serviço, defina no `telinha-server` `WEB_APP_URL` com a URL dele (por exemplo `https://telinha-web.onrender.com`).
+
+No navegador ficam de fora o seletor de telas próprio e o envio nativo, o áudio do sistema por WASAPI, bandeja, atalhos globais, Discord e atualização automática: a captura é sempre o `getDisplayMedia` do navegador (áudio só onde o navegador oferece, como aba ou tela inteira no Chrome/Edge do Windows). Celulares assistem, mas não transmitem. Quem está na web assiste normalmente a lives do envio nativo (H.264).
+
+Quando `MIN_APP_VERSION` passa da versão publicada na web, a pessoa vê "Recarregar": publique a web junto com o bump de versão.
 
 ### Outro provedor
 

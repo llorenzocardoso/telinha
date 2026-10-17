@@ -1,10 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { createRoom, enterRoom, isValidRoomCode, type RoomSession } from "../lib/api";
 import { roomCodeFromInput } from "../lib/roomCode";
+import { isTauriRuntime } from "../lib/runtime";
 import { Button } from "../components/ui";
 import logo from "../assets/telinha-logo.svg";
 
 const NAME_KEY = "telinha-display-name";
+const RELEASES_URL = "https://github.com/llorenzocardoso/telinha/releases/latest";
 const MAX_NAME_LENGTH = 24;
 
 interface HomeScreenProps {
@@ -156,6 +158,15 @@ export function HomeScreen({
         )}
 
         <p className="home-note">Sem conta. A imagem vai direto entre vocês.</p>
+        {!isTauriRuntime() && (
+          <p className="home-note">
+            Usa Windows?{" "}
+            <a href={RELEASES_URL} target="_blank" rel="noreferrer">
+              Baixe o app
+            </a>{" "}
+            para escolher telas com miniaturas e capturar o áudio do sistema.
+          </p>
+        )}
       </div>
     </main>
   );

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { isTauriRuntime } from "../lib/runtime";
 import { ShareCancelledError } from "../media/displayShare";
 import { WINDOWS_PICKER_ID } from "../media/nativeShare";
 import { NativeSourcePicker } from "./NativeSourcePicker";
@@ -47,7 +48,11 @@ export function SwitchSourceDialog({ native, onCancel, onSwitch }: SwitchSourceD
         <NativeSourcePicker value={null} onPick={(source) => void change(source.id)} />
       ) : (
         <>
-          <p className="share-note">O Windows mostra aplicativos e monitores no próximo passo.</p>
+          <p className="share-note">
+            {isTauriRuntime()
+              ? "O Windows mostra aplicativos e monitores no próximo passo."
+              : "O navegador mostra abas, janelas e monitores no próximo passo."}
+          </p>
           <Button variant="primary" size="lg" disabled={busy} onClick={() => void change(WINDOWS_PICKER_ID)}>
             {busy ? "Abrindo..." : "Escolher outra tela ou janela"}
           </Button>

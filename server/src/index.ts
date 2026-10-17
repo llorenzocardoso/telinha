@@ -28,6 +28,7 @@ const server = createTelinhaServer({
   minProtocolVersion,
   minAppVersion: process.env.MIN_APP_VERSION,
   corsOrigins,
+  webAppUrl: process.env.WEB_APP_URL?.trim() || undefined,
   turn: {
     keyId: process.env.CLOUDFLARE_TURN_KEY_ID,
     apiToken: process.env.CLOUDFLARE_TURN_API_TOKEN,

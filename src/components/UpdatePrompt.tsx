@@ -4,6 +4,8 @@ interface UpdatePromptProps {
   progress: number | null;
   error: string | null;
   updating: boolean;
+  /** Versão web: atualizar é recarregar a página, sem instalador. */
+  web?: boolean;
   onUpdate: () => void;
   onLater: () => void;
 }
@@ -14,6 +16,7 @@ export function UpdatePrompt({
   progress,
   error,
   updating,
+  web = false,
   onUpdate,
   onLater,
 }: UpdatePromptProps) {
@@ -25,9 +28,11 @@ export function UpdatePrompt({
           {required ? "Atualização obrigatória" : "Nova versão do Telinha"}
         </strong>
         <p>
-          {required
-            ? `A versão ${version} precisa ser instalada para continuar usando as salas.`
-            : `A versão ${version} está disponível. A instalação baixa o instalador e reabre o app.`}
+          {web
+            ? `A versão ${version} já está no ar. Recarregue a página para continuar.`
+            : required
+              ? `A versão ${version} precisa ser instalada para continuar usando as salas.`
+              : `A versão ${version} está disponível. A instalação baixa o instalador e reabre o app.`}
         </p>
         {percent != null && (
           <div className="update-progress" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
@@ -42,7 +47,7 @@ export function UpdatePrompt({
             </button>
           )}
           <button type="button" className="btn btn-primary" onClick={onUpdate} disabled={updating}>
-            {updating ? "Atualizando..." : "Atualizar agora"}
+            {web ? "Recarregar" : updating ? "Atualizando..." : "Atualizar agora"}
           </button>
         </div>
       </div>
