@@ -368,13 +368,12 @@ function App() {
     />
   ) : null;
 
-  const inviteBanner = pendingInvite ? (
+  // Só aparece dentro de uma sala; na tela inicial o convite preenche o cartão de entrar.
+  const inviteBanner = pendingInvite && session ? (
     <div className="notice">
       <strong>Entrar na sala {pendingInvite.code}?</strong>
       <p>
-        {session
-          ? `Você já está em ${session.code}. Confirmar troca para a sala ${pendingInvite.code} como ${displayName(pendingInvite.name)}.`
-          : `Abrir a Telinha como ${displayName(pendingInvite.name)}.`}
+        {`Você já está em ${session.code}. Confirmar troca para a sala ${pendingInvite.code} como ${displayName(pendingInvite.name)}.`}
       </p>
       <div className="notice-actions">
         <button type="button" className="btn btn-secondary" onClick={() => setPendingInvite(null)}>
@@ -413,9 +412,13 @@ function App() {
       {updateDialog}
       {closeDialog}
       <HomeScreen
-        onJoin={adoptSession}
+        onJoin={(next) => {
+          setPendingInvite(null);
+          adoptSession(next);
+        }}
         error={joinError}
-        invite={inviteBanner}
+        invite={pendingInvite}
+        onDismissInvite={() => setPendingInvite(null)}
         joining={Boolean(pendingCode)}
         beforeEnter={flushLeaves}
       />

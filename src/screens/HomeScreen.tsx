@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createRoom, enterRoom, isValidRoomCode, type RoomSession } from "../lib/api";
 import { roomCodeFromInput } from "../lib/roomCode";
 import { isTauriRuntime } from "../lib/runtime";
@@ -9,10 +9,17 @@ const NAME_KEY = "telinha-display-name";
 const RELEASES_URL = "https://github.com/llorenzocardoso/telinha/releases/latest";
 const MAX_NAME_LENGTH = 24;
 
+export interface HomeInvite {
+  code: string;
+  name?: string;
+}
+
 interface HomeScreenProps {
   onJoin: (session: RoomSession) => void;
   error?: string | null;
-  invite?: ReactNode;
+  /** Convite aberto por link: preenche o código e destaca o cartão de entrar. */
+  invite?: HomeInvite | null;
+  onDismissInvite?: () => void;
   joining?: boolean;
   beforeEnter?: () => Promise<void>;
 }
@@ -21,11 +28,14 @@ export function HomeScreen({
   onJoin,
   error: incomingError,
   invite,
+  onDismissInvite,
   joining,
   beforeEnter,
 }: HomeScreenProps) {
   const [displayName, setDisplayName] = useState(() => localStorage.getItem(NAME_KEY) ?? "");
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(invite?.code ?? "");
+  const nameInput = useRef<HTMLInputElement>(null);
+  const joinButton = useRef<HTMLButtonElement>(null);
   const [operation, setOperation] = useState<"create" | "join" | null>(null);
   const [error, setError] = useState<string | null>(incomingError ?? null);
   const nickname = displayName.trim();
@@ -35,6 +45,20 @@ export function HomeScreen({
   useEffect(() => {
     if (incomingError) setError(incomingError);
   }, [incomingError]);
+
+  // O convite vira o próprio formulário de entrar: vale o nome que estiver no campo.
+  useEffect(() => {
+    if (!invite) return;
+    setCode(invite.code);
+    const name =
+      invite.name?.trim().slice(0, MAX_NAME_LENGTH) || nameInput.current?.value.trim() || "";
+    setDisplayName(name);
+    // Depois do render, quando o botão já está habilitado pelo nome.
+    const focus = window.setTimeout(() => {
+      (name ? joinButton.current : nameInput.current)?.focus();
+    }, 0);
+    return () => window.clearTimeout(focus);
+  }, [invite]);
 
   function persistName() {
     localStorage.setItem(NAME_KEY, nickname);
@@ -89,10 +113,23 @@ export function HomeScreen({
           <p>Compartilhe sua tela em segundos.</p>
         </header>
 
+        {invite && (
+          <div className="home-invite" role="status">
+            <p>
+              Você foi convidado para a sala <strong>{invite.code}</strong>. Confira seu nome e
+              clique em <strong>Entrar na sala</strong>.
+            </p>
+            <button type="button" className="home-invite-dismiss" onClick={onDismissInvite}>
+              Ignorar
+            </button>
+          </div>
+        )}
+
         {/* Uma faixa única: o mesmo nome serve para criar e para entrar. */}
         <label className="home-name">
           <span>Seu nome</span>
           <input
+            ref={nameInput}
             type="text"
             placeholder="Como você quer aparecer"
             value={displayName}
@@ -104,11 +141,15 @@ export function HomeScreen({
         </label>
 
         <div className="home-cards">
-          <section className="home-card is-primary" aria-labelledby="home-create">
+          {/* Com convite, o destaque passa para o cartão de entrar. */}
+          <section
+            className={invite ? "home-card" : "home-card is-primary"}
+            aria-labelledby="home-create"
+          >
             <h2 id="home-create">Criar sala</h2>
             <p>Você recebe um código pra mandar pra quem vai assistir.</p>
             <Button
-              variant="primary"
+              variant={invite ? "outline" : "primary"}
               size="lg"
               block
               disabled={busy || !nickname}
@@ -118,7 +159,10 @@ export function HomeScreen({
             </Button>
           </section>
 
-          <section className="home-card" aria-labelledby="home-join">
+          <section
+            className={invite ? "home-card is-invited" : "home-card"}
+            aria-labelledby="home-join"
+          >
             <h2 id="home-join">Entrar</h2>
             <form className="home-join" onSubmit={handleJoin}>
               <input
@@ -132,8 +176,9 @@ export function HomeScreen({
                 onChange={(event) => setCode(roomCodeFromInput(event.target.value))}
               />
               <Button
+                ref={joinButton}
                 type="submit"
-                variant="outline"
+                variant={invite ? "primary" : "outline"}
                 size="lg"
                 block
                 disabled={busy || !codeReady || !nickname}
@@ -143,8 +188,6 @@ export function HomeScreen({
             </form>
           </section>
         </div>
-
-        {invite}
 
         {joining && (
           <p className="home-hint" aria-live="polite">

@@ -389,32 +389,6 @@ export function RoomScreen({
     return () => window.removeEventListener("keydown", onKey);
   }, [cameraSettingsOpen, closeCameraSettings, pickerOpen, watching, watchFullscreen]);
 
-  useEffect(() => {
-    let cancelled = false;
-    let unlisten: (() => void) | undefined;
-
-    listen("toggle-share", () => {
-      if (isSharing) {
-        void stopShare();
-        return;
-      }
-      setPickerOpen(true);
-    })
-      .then((fn) => {
-        if (cancelled) {
-          fn();
-          return;
-        }
-        unlisten = fn;
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [isSharing, stopShare]);
-
   function pushToast(kind: RoomToast["kind"], message: string) {
     toastSeq.current += 1;
     const idn = toastSeq.current;
@@ -841,7 +815,6 @@ export function RoomScreen({
         variant="primary"
         size="lg"
         icon={isSharing ? <Square strokeWidth={1.8} fill="currentColor" /> : <Monitor strokeWidth={1.8} />}
-        shortcut="Ctrl⇧S"
         disabled={!connected}
         onClick={toggleOwnShare}
       >

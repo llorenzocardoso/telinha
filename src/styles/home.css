@@ -114,6 +114,50 @@
   background: var(--surface-2);
 }
 
+/* Convite aberto por link: o cartão de entrar ganha o contorno claro e o botão primário. */
+.home-card.is-invited {
+  border-color: var(--text-2);
+  background: var(--surface-2);
+}
+
+.home-invite {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.home-invite p {
+  flex: 1;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.home-invite strong {
+  color: var(--text);
+  font-weight: var(--weight-medium);
+}
+
+.home-invite-dismiss {
+  flex-shrink: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.home-invite-dismiss:hover {
+  color: var(--text);
+}
+
 .home-card h2 {
   color: var(--text);
   font-size: var(--text-lg);

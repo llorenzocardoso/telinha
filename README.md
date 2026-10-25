@@ -41,7 +41,7 @@ O Telinha cria salas temporárias por código para compartilhar e assistir telas
 
 1. Uma pessoa cria a sala e compartilha o código.
 2. Os demais participantes entram com esse código e um nome.
-3. Qualquer participante pode iniciar uma transmissão com **Compartilhar tela** ou `Ctrl+Shift+S`.
+3. Qualquer participante pode iniciar uma transmissão com **Compartilhar tela**.
 4. O seletor nativo do WebView2 escolhe a janela ou o monitor, e o WebRTC conecta os participantes.
 
 ```mermaid

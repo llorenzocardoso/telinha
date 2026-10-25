@@ -8,8 +8,6 @@
     "opener:default",
     "clipboard-manager:default",
     "clipboard-manager:allow-write-text",
-    "global-shortcut:default",
-    "global-shortcut:allow-register",
     "core:window:allow-set-size",
     "core:window:allow-set-min-size",
     "core:window:allow-center",
