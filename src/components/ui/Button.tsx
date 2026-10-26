@@ -1,9 +1,9 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 export type ButtonVariant = "primary" | "tonal" | "ghost" | "outline" | "danger";
 export type ButtonSize = "sm" | "md" | "lg";
 
-interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className"> {
+interface ButtonProps extends Omit<ComponentProps<"button">, "className"> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   /** Ocupa toda a largura disponível. */

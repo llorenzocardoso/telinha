@@ -23,7 +23,7 @@ describe("isDiagnosticsShortcut", () => {
     expect(isDiagnosticsShortcut(press("d", { ctrlKey: true, shiftKey: true, metaKey: true }))).toBe(false);
   });
 
-  it("não dispara em outra tecla (Ctrl+Shift+S é o atalho de compartilhar)", () => {
+  it("não dispara em outra tecla", () => {
     expect(isDiagnosticsShortcut(press("s", { ctrlKey: true, shiftKey: true }))).toBe(false);
   });
 });

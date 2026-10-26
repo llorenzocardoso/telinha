@@ -44,7 +44,6 @@ Código em [src-tauri/](../src-tauri/). Crate `telinha` (lib `telinha_lib`), ide
 | Evento (Rust → JS) | Quando |
 | --- | --- |
 | `telinha-open-url` | Deep link recebido (ou segunda instância aberta com `telinha:`) |
-| `toggle-share` | Atalho global `Ctrl+Shift+S` |
 | `window-close-requested` | O usuário tentou fechar a janela (o fechamento real é bloqueado; o app mostra `ClosePrompt`) |
 | `app-quit-requested` | "Sair" no menu da bandeja |
 | `share-audio` | Há áudio novo para ler via `read_share_audio` |

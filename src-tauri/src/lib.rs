@@ -13,7 +13,6 @@ use tauri::{
     Emitter, Manager,
 };
 use tauri_plugin_deep_link::DeepLinkExt;
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 #[tauri::command]
 fn copy_to_clipboard(text: String, app: tauri::AppHandle) -> Result<(), String> {
@@ -132,15 +131,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_deep_link::init())
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
-                        let _ = app.emit("toggle-share", ());
-                    }
-                })
-                .build(),
-        )
         .invoke_handler(tauri::generate_handler![
             copy_to_clipboard,
             set_tray_state,
@@ -230,9 +220,6 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
-
-            let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyS);
-            let _ = app.global_shortcut().register(shortcut);
 
             #[cfg(desktop)]
             {

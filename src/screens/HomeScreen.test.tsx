@@ -84,6 +84,19 @@ describe("HomeScreen", () => {
     expect((await screen.findByRole("alert")).textContent).toBe("Sala cheia");
   });
 
+  it("convite por link preenche o código e entra com o nome digitado", async () => {
+    const onJoin = vi.fn();
+    render(<HomeScreen onJoin={onJoin} invite={{ code: "AB23CD" }} />);
+    expect((codeField() as HTMLInputElement).value).toBe("AB23CD");
+    expect(screen.getByRole("status").textContent).toContain("AB23CD");
+
+    fireEvent.change(nameField(), { target: { value: "Bia" } });
+    fireEvent.click(joinButton());
+
+    await waitFor(() => expect(onJoin).toHaveBeenCalledWith(session));
+    expect(enterRoom).toHaveBeenCalledWith("AB23CD", "Bia");
+  });
+
   it("limita o nome a 24 caracteres", () => {
     render(<HomeScreen onJoin={vi.fn()} />);
     expect(nameField().getAttribute("maxlength")).toBe("24");
