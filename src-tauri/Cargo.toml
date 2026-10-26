@@ -1,6 +1,6 @@
 [package]
 name = "telinha"
-version = "0.7.0"
+version = "0.7.1"
 description = "Aplicativo de compartilhamento de tela P2P para Windows"
 authors = ["llorenzocardoso"]
 license = "MIT"
