@@ -4,7 +4,7 @@
   "version": "0.7.1",
   "description": "Servidor de salas e sinalização WebSocket do Telinha.",
   "author": "llorenzocardoso",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/llorenzocardoso/telinha.git",

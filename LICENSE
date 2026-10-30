@@ -1,21 +1,18 @@
-MIT License
+Copyright (c) 2026 llorenzocardoso. Todos os direitos reservados.
 
-Copyright (c) 2026 llorenzocardoso
+O Telinha, incluindo o aplicativo, o servidor, a versão web e o código-fonte
+deste repositório, é propriedade de llorenzocardoso. O repositório é público
+apenas para consulta: nenhuma licença é concedida para copiar, modificar,
+distribuir, sublicenciar ou vender o código, no todo ou em parte, sem
+autorização prévia e por escrito.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Você pode instalar e usar as versões oficiais do Telinha, distribuídas pelos
+canais oficiais do projeto, como a página de Releases deste repositório e a
+versão web.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+As versões publicadas até a 0.7.1 foram distribuídas sob a licença MIT. Quem
+obteve essas versões mantém, sobre elas, os direitos que aquela licença
+concede; esta mudança vale para o código publicado a partir daqui.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Componentes de terceiros incluídos no Telinha continuam sob as respectivas
+licenças.

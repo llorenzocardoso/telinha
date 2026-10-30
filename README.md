@@ -10,7 +10,6 @@
 
 <p align="center">
   <a href="https://github.com/llorenzocardoso/telinha/actions/workflows/ci.yml"><img src="https://github.com/llorenzocardoso/telinha/actions/workflows/ci.yml/badge.svg" alt="Status do CI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/licen%C3%A7a-MIT-22c55e" alt="Licença MIT"></a>
   <img src="https://img.shields.io/badge/plataforma-Windows-2563eb" alt="Plataforma Windows">
   <img src="https://img.shields.io/badge/Tauri-2-24c8db" alt="Tauri 2">
 </p>
@@ -231,8 +230,15 @@ Issues e pull requests são bem-vindos. Antes de enviar uma alteração:
 3. execute os comandos de qualidade relevantes;
 4. não inclua códigos de sala, tokens, IPs ou credenciais em logs e screenshots.
 
+Ao enviar um pull request, você concorda que a contribuição passa a fazer parte do Telinha nos
+mesmos termos do restante do projeto, com todos os direitos reservados a llorenzocardoso.
+
 ## Licença
 
-Distribuído sob a licença [MIT](LICENSE).
+Copyright © 2026 llorenzocardoso. Todos os direitos reservados.
+
+O código fica público para consulta, mas não pode ser copiado, modificado ou redistribuído sem
+autorização por escrito. Veja os termos em [LICENSE](LICENSE). As versões publicadas até a 0.7.1
+foram distribuídas sob a licença MIT.
 
 Feito por [llorenzocardoso](https://github.com/llorenzocardoso).
