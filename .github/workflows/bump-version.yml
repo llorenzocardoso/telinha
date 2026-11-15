@@ -3,8 +3,9 @@ name: Bump version
 # A cada push na main (merge de PR) sobe a versão do app e do servidor e faz o commit
 # "chore: bump version to X" direto na main, como era feito à mão.
 #
-# Nível: patch por padrão. Escreva [minor] ou [major] no título do PR (ele vai para a
-# mensagem do merge) ou em qualquer commit do push. [skip bump] pula.
+# Nível: patch por padrão. Escreva [minor] ou [major] no título do PR; [skip bump] pula.
+# Só o título conta, então o corpo dos commits pode citar essas marcas sem efeito.
+# Também roda na mão: Actions → Bump version → Run workflow.
 #
 # O push usa a deploy key do segredo BUMP_DEPLOY_KEY: o ruleset da main exige PR, e em
 # repositório pessoal o GitHub não aceita o app do GitHub Actions no bypass, só deploy keys.
@@ -14,6 +15,12 @@ name: Bump version
 # próprio commit "chore: bump version", então não entra em loop.
 
 on:
+  workflow_dispatch:
+    inputs:
+      level:
+        description: patch, minor, major ou X.Y.Z
+        required: true
+        default: patch
   push:
     branches: [main]
     paths-ignore:
@@ -60,14 +67,33 @@ jobs:
       - name: Choose the bump level
         id: level
         env:
-          # Mensagens vão por variável de ambiente, nunca interpoladas no script.
-          MESSAGES: ${{ join(github.event.commits.*.message, '\n') }}
+          # Textos vão por variável de ambiente, nunca interpolados no script.
+          MANUAL_LEVEL: ${{ inputs.level }}
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          if grep -qiF '[skip bump]' <<<"$MESSAGES"; then
+          if [ -n "$MANUAL_LEVEL" ]; then
+            if ! grep -qE '^(patch|minor|major|[0-9]+\.[0-9]+\.[0-9]+)$' <<<"$MANUAL_LEVEL"; then
+              echo "::error::Nível inválido: $MANUAL_LEVEL"
+              exit 1
+            fi
+            echo "level=$MANUAL_LEVEL" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Só o título do PR conta: no merge ele é a 3ª linha da mensagem; fora de merge,
+          # o assunto do commit. O corpo pode citar as marcas sem efeito.
+          SUBJECT=$(printf '%s\n' "$HEAD_MESSAGE" | head -n 1)
+          if [[ "$SUBJECT" == "Merge pull request"* ]]; then
+            TITLE=$(printf '%s\n' "$HEAD_MESSAGE" | sed -n '3p')
+          else
+            TITLE=$SUBJECT
+          fi
+          echo "Título considerado: $TITLE"
+          TITLE=${TITLE,,}
+          if [[ "$TITLE" == *"[skip bump]"* ]]; then
             echo "level=skip" >> "$GITHUB_OUTPUT"
-          elif grep -qiF '[major]' <<<"$MESSAGES"; then
+          elif [[ "$TITLE" == *"[major]"* ]]; then
             echo "level=major" >> "$GITHUB_OUTPUT"
-          elif grep -qiF '[minor]' <<<"$MESSAGES"; then
+          elif [[ "$TITLE" == *"[minor]"* ]]; then
             echo "level=minor" >> "$GITHUB_OUTPUT"
           else
             echo "level=patch" >> "$GITHUB_OUTPUT"

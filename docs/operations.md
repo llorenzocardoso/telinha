@@ -117,7 +117,8 @@ Se `APP_VERSION` ficar menor que `MIN_APP_VERSION`, o app mostra a atualização
 
 O workflow **Bump version** (`.github/workflows/bump-version.yml`) roda a cada push na `main` e faz o commit `chore: bump version to X` direto na `main`, usando `scripts/bump-version.mjs` (que recusa se os arquivos acima discordarem entre si).
 
-- **Nível:** patch por padrão. `[minor]` ou `[major]` no título do PR (vai para a mensagem do merge) ou em um commit do push sobe o nível; `[skip bump]` pula.
+- **Nível:** patch por padrão. `[minor]` ou `[major]` no **título do PR** sobe o nível; `[skip bump]` pula. Só o título conta (no merge, a 3ª linha da mensagem); o corpo dos commits pode citar as marcas sem efeito.
+- **Na mão:** *Actions → Bump version → Run workflow*, com `patch`, `minor`, `major` ou `X.Y.Z`.
 - **Ignorados:** pushes que só mexem em `docs/`, `*.md`, `.specs/`, `spike/`, `e2e/`, `.github/` e `LICENSE`.
 - **Sem loop:** o workflow ignora o próprio commit `chore: bump version`. Esse commit dispara a CI normalmente.
 - **Deploy key:** a `main` exige PR, e em repositório pessoal o GitHub não aceita o app do GitHub Actions no bypass do ruleset. O push sai por uma deploy key com escrita (`telinha-bump`), cuja chave privada fica no segredo `BUMP_DEPLOY_KEY`, e *Deploy keys* estão na lista de bypass do `main-ruleset`. Sem o segredo, o workflow falha avisando.
