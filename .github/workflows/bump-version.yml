@@ -1,0 +1,84 @@
+name: Bump version
+
+# A cada push na main (merge de PR) sobe a versão do app e do servidor e faz o commit
+# "chore: bump version to X" direto na main, como era feito à mão.
+#
+# Nível: patch por padrão. Escreva [minor] ou [major] no título do PR (ele vai para a
+# mensagem do merge) ou em qualquer commit do push. [skip bump] pula.
+#
+# Requisito: o ruleset da main precisa deixar o GitHub Actions passar (bypass), senão o
+# push do bot é recusado. Ver docs/operations.md.
+#
+# O push feito com o GITHUB_TOKEN não dispara outros workflows (nem este de novo): sem loop.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".specs/**"
+      - "spike/**"
+      - "e2e/**"
+      - ".github/**"
+      - "LICENSE"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bump-version
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Choose the bump level
+        id: level
+        env:
+          # Mensagens vão por variável de ambiente, nunca interpoladas no script.
+          MESSAGES: ${{ join(github.event.commits.*.message, '\n') }}
+        run: |
+          if grep -qiF '[skip bump]' <<<"$MESSAGES"; then
+            echo "level=skip" >> "$GITHUB_OUTPUT"
+          elif grep -qiF '[major]' <<<"$MESSAGES"; then
+            echo "level=major" >> "$GITHUB_OUTPUT"
+          elif grep -qiF '[minor]' <<<"$MESSAGES"; then
+            echo "level=minor" >> "$GITHUB_OUTPUT"
+          else
+            echo "level=patch" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump
+        id: bump
+        if: steps.level.outputs.level != 'skip'
+        run: node scripts/bump-version.mjs "${{ steps.level.outputs.level }}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push
+        if: steps.level.outputs.level != 'skip'
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: bump version to ${VERSION}"
+          # Alguém pode ter feito push no meio: rebase e tenta de novo.
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              echo "Versão ${VERSION} na main." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            git pull --rebase origin main
+          done
+          exit 1

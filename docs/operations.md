@@ -103,15 +103,26 @@ Existem **dois eixos** independentes:
 | Versão do **protocolo** (inteiro) | `server/src/protocol.ts` (`CURRENT_PROTOCOL_VERSION`) e `src/lib/protocol.ts` (`PROTOCOL_VERSION`) | `MIN_PROTOCOL_VERSION` no servidor: HTTP responde `426 UPDATE_REQUIRED` e o WebSocket envia `update-required` |
 | Versão do **app** (semver) | Ver lista abaixo | `MIN_APP_VERSION` no servidor: `/app-config` leva o app a exibir atualização obrigatória |
 
-A versão do app aparece em **cinco** lugares que devem andar juntos a cada release:
+A versão do app aparece nestes lugares, que andam juntos:
 
-1. `package.json` (`version`)
-2. `src-tauri/Cargo.toml` (`version`)
+1. `package.json` e `package-lock.json` (`version`)
+2. `src-tauri/Cargo.toml` e `src-tauri/Cargo.lock` (`version`)
 3. `src-tauri/tauri.conf.json` (`version`), usada pelo updater e pelo nome dos artefatos
 4. `src/lib/protocol.ts` (`APP_VERSION`), usada na comparação com `minAppVersion` e enviada ao servidor
-5. `server/package.json` (`version`, informativa)
+5. `server/package.json` e `server/package-lock.json` (`version`, informativa)
 
-> Não há automação que sincronize esses valores. Se `APP_VERSION` ficar menor que `MIN_APP_VERSION`, o app mostra a atualização como obrigatória.
+Se `APP_VERSION` ficar menor que `MIN_APP_VERSION`, o app mostra a atualização como obrigatória.
+
+### Bump automático
+
+O workflow **Bump version** (`.github/workflows/bump-version.yml`) roda a cada push na `main` e faz o commit `chore: bump version to X` direto na `main`, usando `scripts/bump-version.mjs` (que recusa se os arquivos acima discordarem entre si).
+
+- **Nível:** patch por padrão. `[minor]` ou `[major]` no título do PR (vai para a mensagem do merge) ou em um commit do push sobe o nível; `[skip bump]` pula.
+- **Ignorados:** pushes que só mexem em `docs/`, `*.md`, `.specs/`, `spike/`, `e2e/`, `.github/` e `LICENSE`.
+- **Sem loop:** o push do bot usa o `GITHUB_TOKEN`, que não dispara outros workflows (nem a CI).
+- **Ruleset:** a `main` exige PR, então o GitHub Actions precisa estar na lista de bypass do ruleset `main-ruleset` (*Settings → Rules → Rulesets*), senão o push é recusado e o workflow falha.
+- Depois de um merge, faça `git pull` antes de criar a próxima branch: a `main` remota terá o commit do bump.
+- Na mão: `node scripts/bump-version.mjs [patch|minor|major|X.Y.Z]`.
 
 ### Mudando o protocolo sem derrubar ninguém
 
@@ -135,7 +146,7 @@ Workflow **Release Windows** (`.github/workflows/release.yml`), disparo manual e
 ### Checklist de release
 
 - [ ] CI verde na `main` (frontend, servidor, E2E, Rust).
-- [ ] Versão atualizada nos cinco lugares acima.
+- [ ] Versão já subiu pelo workflow **Bump version** (confira o último commit da `main`).
 - [ ] Se o protocolo mudou: servidor já em produção aceitando a versão nova.
 - [ ] `api_url` do workflow aponta para o servidor de produção.
 - [ ] Rodar o workflow e conferir a release e o `latest.json`.

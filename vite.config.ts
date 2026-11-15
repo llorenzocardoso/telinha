@@ -33,7 +33,7 @@ export default defineConfig(({ command, mode }) => {
     test: {
       // Testes de componente pedem jsdom com "// @vitest-environment jsdom" no topo do arquivo.
       environment: "node",
-      include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+      include: ["src/**/*.test.ts", "src/**/*.test.tsx", "scripts/**/*.test.mjs"],
     },
   };
 });
