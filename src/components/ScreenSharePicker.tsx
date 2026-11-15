@@ -26,9 +26,26 @@ import {
   type ShareHeight,
 } from "../media/shareQuality";
 import { NativeSourcePicker, describeSource } from "./NativeSourcePicker";
+import {
+  type DiscordStatusMode,
+  useDiscordStatusMode,
+  writeDiscordStatusMode,
+} from "../lib/discordPresence";
 import { Button, Dialog, SegmentedControl, Switch } from "./ui";
 
 const AUDIO_KEY = "telinha-share-audio";
+
+const DISCORD_STATUS_OPTIONS: { value: DiscordStatusMode; label: string }[] = [
+  { value: "link", label: "Com link" },
+  { value: "plain", label: "Sem link" },
+  { value: "off", label: "Desligado" },
+];
+
+const DISCORD_STATUS_HINTS: Record<DiscordStatusMode, string> = {
+  link: "Seu perfil mostra \"Ao vivo no Telinha\" com um botão para assistir. Quem vê seu perfil pode entrar.",
+  plain: "Seu perfil mostra \"Ao vivo no Telinha\", sem o link da sala.",
+  off: "Nada aparece no seu perfil do Discord.",
+};
 
 interface ScreenSharePickerProps {
   onCancel: () => void;
@@ -47,6 +64,7 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
   const [includeAudio, setIncludeAudio] = useState(
     () => localStorage.getItem(AUDIO_KEY) !== "0",
   );
+  const discordStatus = useDiscordStatusMode();
   const [sharing, setSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // H.264 é automático: entra quando há encoder por GPU, sem toggle na interface.
@@ -221,6 +239,21 @@ export function ScreenSharePicker({ onCancel, onShare }: ScreenSharePickerProps)
               localStorage.setItem(AUDIO_KEY, next ? "1" : "0");
             }}
           />
+
+          {nativeRuntime && (
+            <section className="share-field">
+              <header>
+                <strong>Status do Discord</strong>
+              </header>
+              <SegmentedControl
+                label="Status do Discord"
+                value={discordStatus}
+                onChange={writeDiscordStatusMode}
+                options={DISCORD_STATUS_OPTIONS}
+              />
+              <p className="share-hint">{DISCORD_STATUS_HINTS[discordStatus]}</p>
+            </section>
+          )}
         </>
       )}
 

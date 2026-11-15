@@ -253,7 +253,21 @@ Enumera adaptadores DXGI, ignora o driver básico da Microsoft e escolhe por pri
 
 ## Discord Rich Presence
 
-Só funciona se a variável de ambiente **`TELINHA_DISCORD_APP_ID`** estiver definida (e diferente do placeholder `your_discord_app_id`). Uma thread em segundo plano reconecta ao Discord e atualiza "Sala XXXXXX" a cada 8 s. Sem a variável, o módulo não faz nada.
+Enquanto a pessoa está numa sala, o perfil do Discord mostra **"Ao vivo no Telinha"** (transmitindo) ou **"Numa sala do Telinha"**, com o tempo decorrido e, por padrão, um botão **"Assistir no Telinha"** / **"Entrar na sala"** que abre o convite `<API_URL>/j/CODE`. A opção **Status do Discord** no seletor de tela escolhe entre *Com link* (padrão), *Sem link* (só o texto, sem código) e *Desligado*; fica em `localStorage` (`telinha-discord-status`).
+
+- O texto e o botão são montados no frontend (`src/lib/discordPresence.ts`); o comando `set_discord_presence(presence)` só valida: o botão exige `https://` (em desenvolvimento, com `localhost`, o status vai sem botão), rótulo até 32 caracteres e URL até 512, senão o Discord recusaria a atividade inteira.
+- Uma thread reconecta ao Discord local por IPC, envia na hora qualquer mudança e reenvia a cada 15 s para perceber quando o Discord fecha.
+- Quem vê o próprio perfil não vê o botão: o Discord só mostra botões de Rich Presence para os outros.
+
+**ID do aplicativo.** Vem de `TELINHA_DISCORD_APP_ID` em tempo de execução ou, se ausente, do mesmo nome em **tempo de build** (`option_env!`). A release lê a variável de repositório `vars.TELINHA_DISCORD_APP_ID` (o ID é público, não é segredo). Sem ID válido (17–20 dígitos), o módulo não faz nada.
+
+Para criar o aplicativo:
+
+1. Em <https://discord.com/developers/applications>, **New Application** com o nome **Telinha** (é o nome que aparece em "Jogando …").
+2. Copie o **Application ID** da página *General Information*.
+3. Em **Rich Presence → Art Assets**, envie o ícone (512×512 ou maior) com a chave **`telinha`**.
+4. No GitHub: *Settings → Secrets and variables → Actions → Variables*, crie `TELINHA_DISCORD_APP_ID` com o ID. A próxima release já sai com o status.
+5. Para testar localmente: `TELINHA_DISCORD_APP_ID=<id> npm run tauri dev`, com o Discord desktop aberto.
 
 ## Permissões e segurança
 

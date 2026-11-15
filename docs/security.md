@@ -48,7 +48,7 @@ Rate limit por IP em memória, só nas rotas de criação e entrada. Atrás de p
 - O relatório de diagnóstico do cliente remove `token`, `sdp`, `candidate`, `code`, `name`, `url`, `ip` e `address` e limita strings a 240 caracteres; inclui versões, estados de conexão, codec, bytes/frames, contagem de candidatos por tipo e métricas de qualidade.
 - Logs do servidor: apenas inicialização, encerramento e falhas do TURN. Não registre códigos, tokens nem IPs ao adicionar logs.
 - IPs de participantes ficam expostos uns aos outros nos candidatos ICE de uma conexão direta (inerente ao P2P). Com `iceTransportPolicy: "relay"` (ativado na recuperação, quando há TURN) o IP do par não é revelado.
-- Discord Rich Presence (opcional) mostra o código da sala ao Discord local quando `TELINHA_DISCORD_APP_ID` está definido.
+- Discord Rich Presence: com o ID do aplicativo na build, o perfil do Discord mostra que a pessoa está numa sala. No modo padrão *Com link*, o botão leva o convite `/j/CODE`, então **qualquer um que vê o perfil (amigos e membros de servidores em comum) pode entrar na sala**. *Sem link* mostra só o texto, sem o código; *Desligado* não envia nada. A escolha fica no seletor de tela.
 
 ## Segurança do app desktop
 

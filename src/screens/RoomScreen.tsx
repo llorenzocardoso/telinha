@@ -15,6 +15,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import type { RoomSession } from "../lib/api";
 import { inviteLink } from "../lib/trayLive";
+import { buildDiscordPresence, useDiscordStatusMode } from "../lib/discordPresence";
 import { canCaptureScreen } from "../lib/runtime";
 import {
   ConnectionState,
@@ -160,12 +161,27 @@ export function RoomScreen({
     return () => window.clearInterval(timer);
   }, [isSharing]);
 
+  // Status do Discord: "Ao vivo no Telinha" com o botão do convite (ou sem, conforme a opção).
+  const discordStatus = useDiscordStatusMode();
+  const joinedAtRef = useRef<{ code: string; at: number } | null>(null);
   useEffect(() => {
-    void invoke("set_discord_presence", { code: session.code }).catch(() => undefined);
-    return () => {
-      void invoke("set_discord_presence", { code: null }).catch(() => undefined);
-    };
-  }, [session.code]);
+    if (joinedAtRef.current?.code !== session.code) {
+      joinedAtRef.current = { code: session.code, at: Date.now() };
+    }
+    const presence = buildDiscordPresence({
+      mode: discordStatus,
+      code: session.code,
+      live: isSharing,
+      since: isSharing ? liveSince : joinedAtRef.current.at,
+    });
+    void invoke("set_discord_presence", { presence }).catch(() => undefined);
+  }, [session.code, discordStatus, isSharing, liveSince]);
+  useEffect(
+    () => () => {
+      void invoke("set_discord_presence", { presence: null }).catch(() => undefined);
+    },
+    [],
+  );
   const localId = session.participantId;
   const remoteShares = screenShares.filter((share) => share.participantIdentity !== localId);
   const localShare = screenShares.find((share) => share.participantIdentity === localId);

@@ -173,6 +173,17 @@ describe("ScreenSharePicker com o seletor nativo", () => {
     });
   }
 
+  it("escolhe o que o status do Discord mostra e guarda a escolha", () => {
+    render(<ScreenSharePicker onCancel={vi.fn()} onShare={vi.fn()} />);
+    expect(screen.getByRole("radio", { name: "Com link" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText(/Quem vê seu perfil pode entrar/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Sem link" }));
+    expect(localStorage.getItem("telinha-discord-status")).toBe("plain");
+    expect(screen.getByRole("radio", { name: "Sem link" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText(/sem o link da sala/)).toBeTruthy();
+  });
+
   it("o interruptor do diálogo liga o seletor próprio e guarda a escolha", async () => {
     nativeBackend({ available: true, vendor: "nvidia", encoder: "NVIDIA H.264 Encoder MFT" });
     render(<ScreenSharePicker onCancel={vi.fn()} onShare={vi.fn()} />);
