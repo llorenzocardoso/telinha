@@ -36,6 +36,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           VITE_API_URL: ${{ inputs.api_url }}
+          # Public Discord application ID for Rich Presence (repo variable, not a secret).
+          # Empty means the build ships without Rich Presence.
+          TELINHA_DISCORD_APP_ID: ${{ vars.TELINHA_DISCORD_APP_ID }}
         with:
           tagName: telinha-v__VERSION__-build-${{ github.run_number }}
           releaseName: Telinha v__VERSION__

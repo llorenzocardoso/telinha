@@ -33,7 +33,7 @@ Modelo em `server/.env.example`.
 
 | Variável | Finalidade |
 | --- | --- |
-| `TELINHA_DISCORD_APP_ID` | Habilita o Rich Presence do Discord ([desktop.md](desktop.md#discord-rich-presence)) |
+| `TELINHA_DISCORD_APP_ID` | Habilita o Rich Presence do Discord ([desktop.md](desktop.md#discord-rich-presence)). Também lida em tempo de build; a release usa a variável de repositório `vars.TELINHA_DISCORD_APP_ID` |
 
 ### Segredos do GitHub Actions
 
