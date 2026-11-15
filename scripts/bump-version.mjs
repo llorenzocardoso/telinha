@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Sobe a versão do Telinha em todos os lugares onde ela aparece, como os commits
 // "chore: bump version to X" faziam à mão.
 //
