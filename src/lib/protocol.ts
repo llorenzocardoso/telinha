@@ -1,5 +1,5 @@
 export const PROTOCOL_VERSION = 2;
-export const APP_VERSION = "0.7.1";
+export const APP_VERSION = "0.7.2";
 
 export interface SignalParticipant {
   id: string;
