@@ -6,10 +6,12 @@ name: Bump version
 # Nível: patch por padrão. Escreva [minor] ou [major] no título do PR (ele vai para a
 # mensagem do merge) ou em qualquer commit do push. [skip bump] pula.
 #
-# Requisito: o ruleset da main precisa deixar o GitHub Actions passar (bypass), senão o
-# push do bot é recusado. Ver docs/operations.md.
+# O push usa a deploy key do segredo BUMP_DEPLOY_KEY: o ruleset da main exige PR, e em
+# repositório pessoal o GitHub não aceita o app do GitHub Actions no bypass, só deploy keys.
+# Ver "Bump automático" em docs/operations.md.
 #
-# O push feito com o GITHUB_TOKEN não dispara outros workflows (nem este de novo): sem loop.
+# Push por deploy key dispara workflows (a CI roda na versão nova). Este aqui ignora o
+# próprio commit "chore: bump version", então não entra em loop.
 
 on:
   push:
@@ -24,7 +26,8 @@ on:
       - "LICENSE"
 
 permissions:
-  contents: write
+  # O push sai pela deploy key; o GITHUB_TOKEN só lê.
+  contents: read
 
 concurrency:
   group: bump-version
@@ -33,12 +36,22 @@ concurrency:
 jobs:
   bump:
     runs-on: ubuntu-latest
-    if: github.actor != 'github-actions[bot]'
+    if: "!startsWith(github.event.head_commit.message, 'chore: bump version')"
     steps:
+      - name: Check the deploy key
+        env:
+          KEY: ${{ secrets.BUMP_DEPLOY_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::Falta o segredo BUMP_DEPLOY_KEY (ver docs/operations.md, Bump automático)."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
+          ssh-key: ${{ secrets.BUMP_DEPLOY_KEY }}
 
       - uses: actions/setup-node@v4
         with:

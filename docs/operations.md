@@ -119,8 +119,9 @@ O workflow **Bump version** (`.github/workflows/bump-version.yml`) roda a cada p
 
 - **Nível:** patch por padrão. `[minor]` ou `[major]` no título do PR (vai para a mensagem do merge) ou em um commit do push sobe o nível; `[skip bump]` pula.
 - **Ignorados:** pushes que só mexem em `docs/`, `*.md`, `.specs/`, `spike/`, `e2e/`, `.github/` e `LICENSE`.
-- **Sem loop:** o push do bot usa o `GITHUB_TOKEN`, que não dispara outros workflows (nem a CI).
-- **Ruleset:** a `main` exige PR, então o GitHub Actions precisa estar na lista de bypass do ruleset `main-ruleset` (*Settings → Rules → Rulesets*), senão o push é recusado e o workflow falha.
+- **Sem loop:** o workflow ignora o próprio commit `chore: bump version`. Esse commit dispara a CI normalmente.
+- **Deploy key:** a `main` exige PR, e em repositório pessoal o GitHub não aceita o app do GitHub Actions no bypass do ruleset. O push sai por uma deploy key com escrita (`telinha-bump`), cuja chave privada fica no segredo `BUMP_DEPLOY_KEY`, e *Deploy keys* estão na lista de bypass do `main-ruleset`. Sem o segredo, o workflow falha avisando.
+- Para trocar a chave: `ssh-keygen -t ed25519 -N "" -C telinha-bump -f bump_key`, `gh repo deploy-key add bump_key.pub --allow-write --title telinha-bump`, `gh secret set BUMP_DEPLOY_KEY < bump_key` e apague os dois arquivos.
 - Depois de um merge, faça `git pull` antes de criar a próxima branch: a `main` remota terá o commit do bump.
 - Na mão: `node scripts/bump-version.mjs [patch|minor|major|X.Y.Z]`.
 
